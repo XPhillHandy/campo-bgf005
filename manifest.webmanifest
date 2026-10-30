@@ -2,7 +2,7 @@
   "name": "Cadastro de Campo BGF-005",
   "short_name": "Campo BGF-005",
   "description": "Leitura de plaquetas e cadastro de mudas em campo - Jaguar Solucoes Ambientais",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

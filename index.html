@@ -101,6 +101,12 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
 .btn-g{background:var(--carta);color:var(--erro);border:1.5px solid var(--borda)}
 .btn-f{background:color-mix(in srgb,var(--alerta) 14%,var(--carta));color:var(--alerta);
   border:1.5px solid var(--alerta);min-height:48px;font-size:.95rem}
+.btn-dig{background:var(--verde);color:#fff;min-height:64px;font-size:1.12rem;
+  border-radius:0;width:100%;flex:0 0 auto;border-bottom:1.5px solid rgba(0,0,0,.12)}
+.aviso-zero{background:var(--carta);border:1.5px solid var(--borda);border-left:5px solid var(--fraco);
+  border-radius:9px;padding:.7rem .8rem;font-size:.85rem;color:var(--cinza);line-height:1.45}
+.aviso-zero.perigo{border-left-color:var(--alerta)}
+.aviso-zero strong{display:block;margin-bottom:.25rem}
 .motivos{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem}
 .motivos .btn-mini.on{background:var(--alerta);color:#fff;border-color:var(--alerta)}
 .esp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.35rem}
@@ -293,6 +299,8 @@ footer{
     <div class="cam-msg" id="camMsg" hidden></div>
   </div>
 
+  <button class="btn btn-dig" id="bDigitarG">Digitar o número à mão</button>
+
   <div class="trilha-cx">
     <div class="trilha" id="trilha"></div>
   </div>
@@ -304,9 +312,8 @@ footer{
       <button class="btn btn-s btn-mini" id="bFim">Ponto fim</button>
     </div>
     <button class="btn btn-f" id="bSemLeitura">Marcar muda sem leitura</button>
-    <div class="acoes">
+    <div class="ancoras">
       <button class="btn btn-s btn-mini" id="bNova">Nova linha</button>
-      <button class="btn btn-s btn-mini" id="bDigitar">Digitar</button>
       <button class="btn btn-s btn-mini" id="bDesfazer">Desfazer</button>
     </div>
   </div>
@@ -949,10 +956,31 @@ footer{
     tSalvo = setTimeout(function () { el.hidden = true; }, 1400);
   }
 
+  /* O app guarda a coleta no lugar de onde foi aberto. Icone da tela inicial e
+     navegador sao lugares diferentes; por isso a abertura avisa onde esta. */
+  function noIcone() {
+    try {
+      return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+        || window.navigator.standalone === true;
+    } catch (e) { return false; }
+  }
+
   function pintarAbertura() {
     var av = $("avisoRetomar");
     $("fTec").value = S.tec; $("fTal").value = S.tal; $("fLin").value = S.lin;
-    if (!S.reg.length) { av.hidden = true; $("bRetomar").hidden = true; return; }
+    if (!S.reg.length) {
+      $("bRetomar").hidden = true;
+      av.hidden = false; av.className = "aviso-zero" + (noIcone() ? "" : " perigo");
+      av.innerHTML = "";
+      var z1 = document.createElement("strong");
+      z1.textContent = "Nenhuma leitura guardada neste aparelho.";
+      var z2 = document.createElement("div");
+      z2.textContent = noIcone()
+        ? "Você está no ícone da tela inicial, que é o lugar certo. Pode começar."
+        : "Atenção: você abriu pelo navegador. Se já leu mudas antes, elas ficaram guardadas em outro lugar. Abra o menu do navegador, toque em Adicionar à tela inicial e use sempre o ícone.";
+      av.appendChild(z1); av.appendChild(z2);
+      return;
+    }
     av.hidden = false; av.className = "aviso-fx";
     av.innerHTML = "";
     var l1 = document.createElement("strong");
@@ -1460,11 +1488,12 @@ footer{
     $("fLin").focus(); $("fLin").select();
   });
 
-  $("bDigitar").addEventListener("click", function () {
+  function abrirDigitar() {
     $("modal").hidden = false; $("mNum").value = "";
     $("mEsp").textContent = "Espécie prevista aparece aqui.";
     setTimeout(function () { $("mNum").focus(); }, 60);
-  });
+  }
+  $("bDigitarG").addEventListener("click", abrirDigitar);
   $("mNum").addEventListener("input", function () {
     var n = parseInt($("mNum").value, 10), e = especie(n);
     $("mEsp").textContent = e ? ("Prevista: " + e[0])

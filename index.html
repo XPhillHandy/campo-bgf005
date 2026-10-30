@@ -360,6 +360,9 @@ footer{
   <button class="btn btn-p" id="bCsv">Baixar CSV completo</button>
   <button class="btn btn-s" id="bCopiar">Copiar tudo (WhatsApp / e-mail)</button>
   <p class="nota">O CSV sempre sai completo, com tudo que está no aparelho. Baixar duas vezes não duplica nada.</p>
+  <label class="btn btn-s" for="fImp">Juntar CSV de outro celular</label>
+  <input id="fImp" type="file" accept=".csv,text/csv" hidden>
+  <p class="nota" id="nImp">Traz a coleta de outro aparelho para dentro deste. Nada é apagado e nada duplica: o que já existe aqui é reconhecido e ignorado.</p>
   <button class="btn btn-g" id="bLimpar">Apagar tudo deste aparelho</button>
 </main>
 
@@ -1406,6 +1409,53 @@ footer{
     } catch (e) { b.textContent = "Falhou ao salvar o GPX"; }
   }
 
+  /* ---- juntar a coleta de outro aparelho ----
+     O CSV carrega o id de cada registro, entao a uniao e feita por id:
+     o que ja existe neste aparelho nao entra duas vezes. */
+  function partes(l) {
+    var s = [], a = "", q = false;
+    for (var i = 0; i < l.length; i++) {
+      var ch = l[i];
+      if (q) {
+        if (ch === '"' && l[i + 1] === '"') { a += '"'; i++; }
+        else if (ch === '"') { q = false; }
+        else { a += ch; }
+      } else if (ch === '"') { q = true; }
+      else if (ch === ";") { s.push(a); a = ""; }
+      else { a += ch; }
+    }
+    s.push(a); return s;
+  }
+
+  function lerCsv(txt) {
+    var TIPO = { muda: "muda", sem_leitura: "falha", ancora_inicio: "ini", ancora_fim: "fim" };
+    txt = String(txt).replace(/^\ufeff/, "");
+    var ls = txt.split(/\r?\n/).filter(function (l) { return l.trim() !== ""; });
+    if (ls.length < 2) return null;
+    var ix = {};
+    partes(ls[0]).forEach(function (c, i) { ix[c.trim()] = i; });
+    if (ix.id == null || ix.tipo == null || ix.data_hora == null) return null;
+    var nov = [];
+    for (var i = 1; i < ls.length; i++) {
+      var c = partes(ls[i]);
+      var g = function (k) { return ix[k] == null ? "" : (c[ix[k]] == null ? "" : c[ix[k]]); };
+      var n = function (k) { var v = g(k).replace(",", "."); return v === "" ? null : parseFloat(v); };
+      var t = TIPO[g("tipo")] || g("tipo");
+      if (["muda", "falha", "ini", "fim"].indexOf(t) < 0) continue;
+      var nome = g("especie"), iE = -1;
+      ESP.forEach(function (e, j) { if (e[0] === nome) iE = j; });
+      var r = {
+        id: g("id") || uid(), t: t, cod: g("codigo"), tec: g("tecnico"),
+        tal: g("talhao"), lin: g("linha"), ord: parseInt(g("ordem"), 10) || 0,
+        esp: nome, ts: g("data_hora"), la: n("latitude"), lo: n("longitude"),
+        ac: n("precisao_m"), motivo: g("motivo"), org: g("origem")
+      };
+      if (t === "falha" && iE >= 0) r.espI = iE;
+      nov.push(r);
+    }
+    return nov.length ? nov : null;
+  }
+
   function nomeArq(sufixo) {
     var d = new Date(), p = function (x) { return String(x).padStart(2, "0"); };
     return "BGF005_campo_" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
@@ -1602,6 +1652,30 @@ footer{
   $("bVoltarScan").addEventListener("click", function () { mostrar("scan"); abrirCamera(); });
   $("bCsv").addEventListener("click", function () { baixar(false); });
   $("bCopiar").addEventListener("click", copiar);
+
+  $("fImp").addEventListener("change", function () {
+    var f = this.files && this.files[0], av = $("nImp"), ent = this;
+    if (!f) return;
+    av.textContent = "Lendo " + f.name + "...";
+    var fr = new FileReader();
+    fr.onerror = function () { av.textContent = "Não consegui abrir esse arquivo."; };
+    fr.onload = function () {
+      var nov = lerCsv(fr.result);
+      if (!nov) {
+        av.textContent = "Não consegui ler esse arquivo. Precisa ser um CSV baixado por este mesmo aplicativo.";
+        return;
+      }
+      var antes = S.reg.length;
+      S.reg = unir(S.reg, nov);
+      var novos = S.reg.length - antes;
+      salvar();
+      av.textContent = nov.length + " registros no arquivo · " + novos
+        + " juntados · " + (nov.length - novos) + " já estavam aqui.";
+      desenharLista(); pintar(); desenharPainel();
+    };
+    fr.readAsText(f, "utf-8");
+    ent.value = "";
+  });
 
   var armado = false, tArm = null;
   $("bLimpar").addEventListener("click", function () {

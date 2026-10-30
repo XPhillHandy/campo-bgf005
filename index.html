@@ -103,6 +103,13 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
   border:1.5px solid var(--alerta);min-height:48px;font-size:.95rem}
 .motivos{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem}
 .motivos .btn-mini.on{background:var(--alerta);color:#fff;border-color:var(--alerta)}
+.esp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.35rem}
+.esp-chip{border:1.5px solid var(--borda);border-radius:8px;background:var(--carta);
+  color:var(--cinza);padding:.34rem .2rem;font-size:.67rem;font-weight:600;line-height:1.15;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.22rem;min-height:48px}
+.esp-chip .pq{width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.18);flex:0 0 auto}
+.esp-chip.on{border-width:2.5px;background:color-mix(in srgb,var(--cinza) 8%,var(--carta))}
+.esp-chip.nenhuma{grid-column:1 / -1;flex-direction:row;min-height:38px;color:var(--fraco)}
 .btn[disabled]{opacity:.45;pointer-events:none}
 .btn-mini{min-height:42px;font-size:.85rem;border-radius:8px;padding:.4rem .6rem}
 
@@ -388,6 +395,10 @@ footer{
         <button class="btn btn-s btn-mini" data-mot="ilegivel">Ilegível</button>
         <button class="btn btn-s btn-mini" data-mot="nao_leu">QR não leu</button>
       </div>
+    </div>
+    <div id="cEspecies" hidden>
+      <div class="campo-lbl" style="margin-bottom:.35rem">Espécie, se der para reconhecer</div>
+      <div class="esp-grid" id="cGrade"></div>
     </div>
     <label class="campo-lbl" for="cNum">Número da plaqueta</label>
     <div class="prefixo">
@@ -690,9 +701,14 @@ footer{
       var n = parseInt(r.cod.slice(-4), 10);
       if (n >= 1 && n <= TOTAL_PLAQUETAS) cont[Math.floor((n - 1) / POR_ESPECIE)]++;
     });
+    /* identificadas pela bióloga, mas ainda sem código */
+    var semCod = [];
+    for (var j = 0; j < ESP.length; j++) semCod.push(0);
+    fl.forEach(function (r) { if (r.espI != null) semCod[r.espI]++; });
+
     var alvo = $("pEspecies"); alvo.innerHTML = "";
     ESP.forEach(function (e, i) {
-      alvo.appendChild(barraItem(e[0], e[1], cont[i], POR_ESPECIE));
+      alvo.appendChild(barraItem(e[0], e[1], cont[i], POR_ESPECIE, semCod[i]));
     });
 
     /* por talhão e linha */
@@ -727,14 +743,15 @@ footer{
       : "Nenhuma cópia automática ainda. A primeira sai na 25ª leitura.";
   }
 
-  function barraItem(nome, cor, feito, total) {
+  function barraItem(nome, cor, feito, total, semCodigo) {
     var el = document.createElement("div"); el.className = "esp";
     var pt = document.createElement("div"); pt.className = "ponto"; pt.style.background = cor;
     var ic = document.createElement("div"); ic.className = "esp-i";
     var topo = document.createElement("div"); topo.className = "esp-top";
     var nm = document.createElement("div"); nm.className = "esp-nome"; nm.textContent = nome;
     var ct = document.createElement("div"); ct.className = "esp-cnt num";
-    ct.textContent = feito + " / " + total;
+    ct.textContent = feito + " / " + total + (semCodigo ? "  +" + semCodigo + " s/ código" : "");
+    if (semCodigo) ct.style.color = "var(--alerta)";
     topo.appendChild(nm); topo.appendChild(ct);
     var ba = document.createElement("div"); ba.className = "esp-barra";
     var fi = document.createElement("i");
@@ -783,8 +800,11 @@ footer{
         c.disabled = true;
       } else if (r.t === "falha") {
         c.className = "chip falha" + (i === itens.length - 1 ? " atual" : "");
+        c.style.borderTopColor = corFalha(r);
         var fo = document.createElement("div"); fo.className = "chip-o"; fo.textContent = "nº " + r.ord;
-        var fn = document.createElement("div"); fn.className = "chip-n"; fn.textContent = "— ?";
+        var fn = document.createElement("div"); fn.className = "chip-n";
+        fn.textContent = r.esp ? r.esp.slice(0, 5) + "…" : "— ?";
+        if (r.espI != null) fn.style.color = ESP[r.espI][1];
         c.appendChild(fo); c.appendChild(fn);
         c.setAttribute("aria-label", "Lugar sem leitura, posição " + r.ord);
         c.addEventListener("click", function () { abrirCorrecao(r.id); });
@@ -812,14 +832,15 @@ footer{
     var e = falha ? null : especie(parseInt(r.cod.slice(-4), 10));
     var cx = $("cCartao");
     cx.className = "cartao" + (falha ? " falha" : "");
-    cx.style.borderLeftColor = falha ? "var(--alerta)" : (e ? e[1] : "var(--borda)");
+    cx.style.borderLeftColor = falha ? corFalha(r) : (e ? e[1] : "var(--borda)");
     cx.innerHTML = "";
     var l = document.createElement("div"); l.className = "c-l";
     var a = document.createElement("div");
     a.className = "c-cod" + (falha ? "" : " num");
     a.textContent = falha ? "Sem leitura" : r.cod;
     var b = document.createElement("div"); b.className = "c-esp";
-    b.textContent = (falha ? rotuloMotivo(r.motivo) : (e ? e[0] : "fora da faixa"))
+    b.textContent = (falha ? ((r.esp ? r.esp + " · " : "") + rotuloMotivo(r.motivo))
+                           : (e ? e[0] : "fora da faixa"))
       + " · T" + r.tal + " · L" + r.lin;
     l.appendChild(a); l.appendChild(b);
     var d = document.createElement("div"); d.className = "c-r";
@@ -831,13 +852,67 @@ footer{
 
     $("cTit").textContent = falha ? "Lugar sem leitura" : "Conferir muda";
     $("cMotivos").hidden = !falha;
-    if (falha) marcarMotivo(r.motivo);
+    $("cEspecies").hidden = !falha;
+    if (falha) { marcarMotivo(r.motivo); montarGrade(); marcarEspecie(r.espI); }
     $("cNum").value = falha ? "" : r.cod.slice(-4);
     $("cEsp").textContent = falha
       ? "Se conseguir o número da plaqueta, digite e isto vira uma muda normal."
       : "Confira contra a plaqueta da muda. Se bater, é só voltar.";
     $("cSalvar").textContent = falha ? "Registrar o número" : "Salvar correção";
     $("modalC").hidden = false;
+  }
+
+  /* ---- escolha de espécie para um lugar sem leitura ----
+     Saber a espécie reduz o candidato de 1 em 1.368 para 1 em 114, e cruzando
+     com os códigos daquela espécie já lidos, muitas fecham por eliminação. */
+  function montarGrade() {
+    var g = $("cGrade");
+    if (g.childNodes.length) return;
+    ESP.forEach(function (e, i) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "esp-chip";
+      b.setAttribute("data-esp", i);
+      var pq = document.createElement("span"); pq.className = "pq"; pq.style.background = e[1];
+      var nm = document.createElement("span"); nm.textContent = e[0];
+      b.appendChild(pq); b.appendChild(nm);
+      b.style.borderColor = "var(--borda)";
+      b.addEventListener("click", function () { escolherEspecie(i); });
+      g.appendChild(b);
+    });
+    var nen = document.createElement("button");
+    nen.type = "button"; nen.className = "esp-chip nenhuma";
+    nen.setAttribute("data-esp", "-1");
+    nen.textContent = "Não consegui identificar a espécie";
+    nen.addEventListener("click", function () { escolherEspecie(-1); });
+    g.appendChild(nen);
+  }
+
+  function escolherEspecie(i) {
+    var r = acharPorId(idEmEdicao); if (!r) return;
+    if (i < 0) { r.espI = null; r.esp = ""; }
+    else { r.espI = i; r.esp = ESP[i][0]; }
+    marcarEspecie(r.espI);
+    /* atualiza o cartão do topo sem fechar o que já foi digitado */
+    var cx = $("cCartao");
+    cx.style.borderLeftColor = corFalha(r);
+    var sub = cx.querySelector(".c-esp");
+    if (sub) sub.textContent = (r.esp ? r.esp + " · " : "") + rotuloMotivo(r.motivo)
+      + " · T" + r.tal + " · L" + r.lin;
+    salvar(); pintar();
+    if (!$("tLista").hidden) desenharLista();
+  }
+
+  function marcarEspecie(i) {
+    [].forEach.call($("cGrade").querySelectorAll(".esp-chip"), function (b) {
+      var d = parseInt(b.getAttribute("data-esp"), 10);
+      var on = (i == null && d === -1) || (i != null && d === i);
+      b.classList.toggle("on", on);
+      b.style.borderColor = on && d >= 0 ? ESP[d][1] : "var(--borda)";
+    });
+  }
+
+  function corFalha(r) {
+    return (r.espI != null && ESP[r.espI]) ? ESP[r.espI][1] : "var(--alerta)";
   }
 
   function rotuloMotivo(m) {
@@ -1183,13 +1258,16 @@ footer{
           li.appendChild(a);
         } else if (r.t === "falha") {
           var fod = document.createElement("div"); fod.className = "li-ord num"; fod.textContent = r.ord;
+          var fpt = document.createElement("div"); fpt.className = "ponto";
+          fpt.style.background = r.espI != null ? ESP[r.espI][1] : "transparent";
+          fpt.style.borderStyle = r.espI != null ? "solid" : "dashed";
           var ff = document.createElement("div"); ff.className = "li-falha";
-          ff.textContent = "— sem leitura · " + rotuloMotivo(r.motivo);
+          ff.textContent = "— sem leitura" + (r.esp ? " · " + r.esp : "") + " · " + rotuloMotivo(r.motivo);
           var fx = document.createElement("button");
           fx.className = "li-x"; fx.type = "button"; fx.textContent = "✎";
-          fx.style.color = "var(--alerta)";
+          fx.style.color = corFalha(r);
           fx.setAttribute("aria-label", "Registrar o número desta posição");
-          li.appendChild(fod); li.appendChild(ff); li.appendChild(fx);
+          li.appendChild(fod); li.appendChild(fpt); li.appendChild(ff); li.appendChild(fx);
           li.style.cursor = "pointer";
           li.addEventListener("click", function () { abrirCorrecao(r.id); });
         } else {
@@ -1265,7 +1343,7 @@ footer{
     S.reg.forEach(function (r) {
       if (r.la == null || r.lo == null) return;
       var nome = r.t === "muda" ? r.cod
-        : r.t === "falha" ? ("SEM-LEITURA T" + r.tal + " L" + r.lin + " n" + r.ord)
+        : r.t === "falha" ? ("SEM-LEITURA " + (r.esp || "especie?") + " T" + r.tal + " L" + r.lin + " n" + r.ord)
         : ((r.t === "ini" ? "INICIO" : "FIM") + " T" + r.tal + " L" + r.lin);
       s += '<wpt lat="' + r.la.toFixed(7) + '" lon="' + r.lo.toFixed(7) + '">'
         + '<name>' + esc(nome) + '</name>'
@@ -1442,8 +1520,17 @@ footer{
         $("cEsp").textContent = "Esse número já está em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ").";
         return;
       }
-      var ef = especie(n);
+      var ef = especie(n), iF = ef ? ESP.indexOf(ef) : -1;
+      /* se a espécie reconhecida não bate com a do código, confirma antes */
+      if (r.espI != null && iF >= 0 && iF !== r.espI && this.getAttribute("data-ok") !== "1") {
+        $("cEsp").textContent = "Atenção: você marcou " + ESP[r.espI][0] + ", mas "
+          + novo + " é " + ef[0] + ". Toque de novo para confirmar.";
+        this.setAttribute("data-ok", "1");
+        return;
+      }
+      this.removeAttribute("data-ok");
       r.t = "muda"; r.cod = novo; r.esp = ef ? ef[0] : "";
+      r.espI = iF >= 0 ? iF : null;
       r.corr = new Date().toISOString();
       salvar(); pintar();
       if (!$("tLista").hidden) desenharLista();

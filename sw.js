@@ -1,7 +1,7 @@
 /* Service worker - deixa o app abrir sem nenhum sinal de internet.
    Guarda a pagina inteira e a biblioteca de leitura de QR no aparelho,
    na primeira visita com rede. Depois disso nunca mais precisa de dados. */
-var CACHE = "bgf005-campo-v2";
+var CACHE = "bgf005-campo-v3";
 var JSQR = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
 var ARQ = ["./", "./index.html", "./manifest.webmanifest", "./icone.svg", JSQR];
 
@@ -22,19 +22,20 @@ self.addEventListener("activate", function (e) {
   );
 });
 
-/* Cache primeiro: offline e o caso normal, nao a excecao. */
+/* Cache primeiro, mas renova por tras: o app abre instantaneo e offline,
+   e quando houver rede ele busca a versao nova para a proxima abertura. */
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(function (r) {
-      if (r) return r;
-      return fetch(e.request).then(function (resp) {
+      var rede = fetch(e.request).then(function (resp) {
         if (resp && resp.ok) {
           var cl = resp.clone();
           caches.open(CACHE).then(function (c) { c.put(e.request, cl); });
         }
         return resp;
-      }).catch(function () { return caches.match("./index.html"); });
+      }).catch(function () { return r || caches.match("./index.html"); });
+      return r || rede;
     })
   );
 });

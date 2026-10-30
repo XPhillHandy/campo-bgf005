@@ -329,6 +329,13 @@ footer{
   <h3 class="sec">Por talhão e linha</h3>
   <div id="pTalhoes" class="esp-lista"></div>
 
+  <h3 class="sec">Caminhamento</h3>
+  <p class="nota" id="pTrilha"></p>
+  <div class="dupla">
+    <button class="btn btn-s btn-mini" id="bGpx">Baixar caminhamento (GPX)</button>
+    <button class="btn btn-s btn-mini" id="bTrilha">Desligar caminhamento</button>
+  </div>
+
   <p class="nota" id="pBackup"></p>
 </main>
 
@@ -419,6 +426,7 @@ footer{
 
   var $ = function (id) { return document.getElementById(id); };
   var CHAVE = "bgf005.campo.v2", CHAVE_BK = "bgf005.campo.v2.bk";
+  var CHAVE_TR = "bgf005.campo.v2.trilha";
   var PASSO_BACKUP = 25;
 
   var S = { tec: "", tal: "", lin: "", reg: [], nbk: 0, ebk: null, nexp: 0 };
@@ -491,6 +499,7 @@ footer{
   function salvar() {
     lsGravar();
     idbGravar();
+    if (desdeSalvo) trGravar();
     marcaSalvo();
   }
 
@@ -525,6 +534,68 @@ footer{
       if (!S.tec && c.tec) { S.tec = c.tec; S.tal = c.tal; S.lin = c.lin; }
       if (S.reg.length !== antes) { lsGravar(); pintar(); pintarAbertura(); }
     });
+  }
+
+  /* ============ CAMINHAMENTO ============
+     Rastro contínuo do GPS enquanto a pessoa anda. Guardado em chave própria,
+     fora do estado principal, para não pesar a gravação a cada leitura.
+     É o que permite interpolar a posição de cada muda ao longo da linha. */
+  var TR = [];                 /* [ms, lat, lon, precisao] */
+  var posAtual = null, vigia = null, ultimoPt = null, desdeSalvo = 0;
+
+  function trLer() {
+    try {
+      var b = localStorage.getItem(CHAVE_TR);
+      var a = b ? JSON.parse(b) : null;
+      if (Array.isArray(a)) { TR = a; ultimoPt = TR[TR.length - 1] || null; }
+    } catch (e) {}
+  }
+  function trGravar() {
+    try { localStorage.setItem(CHAVE_TR, JSON.stringify(TR)); desdeSalvo = 0; } catch (e) {}
+  }
+
+  function metros(la1, lo1, la2, lo2) {
+    var R = 6371000, rad = Math.PI / 180;
+    var dla = (la2 - la1) * rad, dlo = (lo2 - lo1) * rad;
+    var m = Math.cos(la1 * rad) * dlo;
+    return R * Math.sqrt(dla * dla + m * m);
+  }
+
+  function trilhaLigada() { return S.trilha !== false; }
+
+  function iniciarTrilha() {
+    if (!navigator.geolocation || vigia !== null || !trilhaLigada()) return;
+    try {
+      vigia = navigator.geolocation.watchPosition(function (p) {
+        posAtual = { la: p.coords.latitude, lo: p.coords.longitude,
+                     ac: p.coords.accuracy, t: p.timestamp || Date.now() };
+        guardarPonto(posAtual);
+      }, function () {}, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
+    } catch (e) { vigia = null; }
+  }
+  function pararTrilha() {
+    if (vigia !== null) {
+      try { navigator.geolocation.clearWatch(vigia); } catch (e) {}
+      vigia = null;
+    }
+    if (desdeSalvo) trGravar();
+  }
+
+  /* só guarda se andou 2 m ou passaram 8 s — evita encher parado */
+  function guardarPonto(p) {
+    if (ultimoPt) {
+      var d = metros(ultimoPt[1], ultimoPt[2], p.la, p.lo);
+      if (d < 2 && (p.t - ultimoPt[0]) < 8000) return;
+    }
+    var pt = [Math.round(p.t), +p.la.toFixed(6), +p.lo.toFixed(6), Math.round(p.ac)];
+    TR.push(pt); ultimoPt = pt; desdeSalvo++;
+    if (desdeSalvo >= 5) trGravar();
+  }
+
+  /* carimba a posição do instante na leitura */
+  function carimbarPos(r) {
+    if (!posAtual) return;
+    r.la = posAtual.la; r.lo = posAtual.lo; r.ac = posAtual.ac;
   }
 
   /* pede ao navegador para não descartar os dados */
@@ -644,6 +715,12 @@ footer{
         alvoT.appendChild(linhaItem(k, d.m, d.f));
       });
     }
+
+    $("pTrilha").textContent = TR.length
+      ? (TR.length + " pontos de caminhamento gravados")
+      : (trilhaLigada() ? "Caminhamento ligado — aguardando o GPS." : "Caminhamento desligado.");
+    $("bTrilha").textContent = trilhaLigada() ? "Desligar caminhamento" : "Ligar caminhamento";
+    $("bTrilha").className = "btn btn-mini " + (trilhaLigada() ? "btn-s" : "btn-f");
 
     $("pBackup").textContent = S.ebk
       ? ("Última cópia automática em Downloads: " + S.ebk + " — " + S.nbk + " registros.")
@@ -837,6 +914,7 @@ footer{
       ord: posicoes().length + 1, esp: e ? e[0] : "", ts: new Date().toISOString(),
       org: origem || "qr"
     };
+    carimbarPos(r);
     S.reg.push(r); salvar();
     bip(880, 110); vibra(45);
     cartaoOk(r, e);
@@ -851,15 +929,16 @@ footer{
       ord: posicoes().length + 1, esp: "", motivo: "sem_leitura",
       ts: new Date().toISOString(), org: "falha"
     };
+    carimbarPos(r);
     S.reg.push(r); salvar();
     bip(520, 150); vibra([60, 45, 60]);
     cartaoFalha(r);
     pintar();
-    pontoRapido(r);
+    if (!posAtual) pontoRapido(r);
     talvezBackup();
   }
 
-  /* uma única leitura de GPS, sem travar o trabalho — só para a bióloga achar depois */
+  /* reserva: se o rastro estiver desligado, pega uma leitura só */
   function pontoRapido(r) {
     if (!navigator.geolocation) return;
     try {
@@ -1171,6 +1250,56 @@ footer{
     return "\ufeff" + ls.join("\r\n");
   }
 
+  /* ---- caminhamento + mudas em um GPX, para abrir direto no SIG ---- */
+  function gpx() {
+    var esc = function (v) {
+      return String(v == null ? "" : v).replace(/[<>&"]/g, function (c) {
+        return ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c];
+      });
+    };
+    var s = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      + '<gpx version="1.1" creator="Jaguar BGF-005" xmlns="http://www.topografix.com/GPX/1/1">\n'
+      + '<metadata><name>BGF-005 ' + esc(S.tec) + '</name>'
+      + '<time>' + new Date().toISOString() + '</time></metadata>\n';
+
+    S.reg.forEach(function (r) {
+      if (r.la == null || r.lo == null) return;
+      var nome = r.t === "muda" ? r.cod
+        : r.t === "falha" ? ("SEM-LEITURA T" + r.tal + " L" + r.lin + " n" + r.ord)
+        : ((r.t === "ini" ? "INICIO" : "FIM") + " T" + r.tal + " L" + r.lin);
+      s += '<wpt lat="' + r.la.toFixed(7) + '" lon="' + r.lo.toFixed(7) + '">'
+        + '<name>' + esc(nome) + '</name>'
+        + '<desc>' + esc((r.esp || "") + " | T" + r.tal + " L" + r.lin
+            + " ordem " + (r.ord || "") + " | +-" + (r.ac == null ? "?" : r.ac.toFixed(0)) + "m")
+        + '</desc><time>' + esc(r.ts) + '</time></wpt>\n';
+    });
+
+    if (TR.length) {
+      s += '<trk><name>Caminhamento ' + esc(S.tec) + '</name><trkseg>\n';
+      TR.forEach(function (p) {
+        s += '<trkpt lat="' + p[1] + '" lon="' + p[2] + '">'
+          + '<time>' + new Date(p[0]).toISOString() + '</time>'
+          + '<desc>+-' + p[3] + 'm</desc></trkpt>\n';
+      });
+      s += '</trkseg></trk>\n';
+    }
+    return s + '</gpx>\n';
+  }
+
+  function baixarGpx() {
+    var b = $("bGpx");
+    try {
+      var bl = new Blob([gpx()], { type: "application/gpx+xml" });
+      var u = URL.createObjectURL(bl), a = document.createElement("a");
+      a.href = u; a.download = nomeArq("").replace(/\.csv$/, ".gpx");
+      a.style.position = "fixed"; a.style.opacity = "0";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(u); a.remove(); }, 2000);
+      b.textContent = "Caminhamento salvo (" + TR.length + " pontos)";
+      setTimeout(function () { b.textContent = "Baixar caminhamento (GPX)"; }, 4000);
+    } catch (e) { b.textContent = "Falhou ao salvar o GPX"; }
+  }
+
   function nomeArq(sufixo) {
     var d = new Date(), p = function (x) { return String(x).padStart(2, "0"); };
     return "BGF005_campo_" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
@@ -1237,7 +1366,7 @@ footer{
     S.lin = $("fLin").value.trim() || "01";
     if (!S.tec) { $("fTec").focus(); return; }
     salvar(); bip(760, 60);
-    mostrar("scan"); abrirCamera();
+    mostrar("scan"); abrirCamera(); iniciarTrilha();
   }
   $("bComecar").addEventListener("click", entrarNoScan);
   $("bRetomar").addEventListener("click", entrarNoScan);
@@ -1348,6 +1477,12 @@ footer{
   $("bFim").addEventListener("click", function () { marcarAncora("fim", this); });
   $("bVerLista").addEventListener("click", function () { mostrar("lista"); });
   $("bVerPainel").addEventListener("click", function () { mostrar("painel"); });
+  $("bGpx").addEventListener("click", baixarGpx);
+  $("bTrilha").addEventListener("click", function () {
+    S.trilha = !trilhaLigada();
+    if (trilhaLigada()) iniciarTrilha(); else pararTrilha();
+    salvar(); desenharPainel();
+  });
   $("bVoltarScan").addEventListener("click", function () { mostrar("scan"); abrirCamera(); });
   $("bCsv").addEventListener("click", function () { baixar(false); });
   $("bCopiar").addEventListener("click", copiar);
@@ -1362,7 +1497,9 @@ footer{
       return;
     }
     baixar(true);
+    if (TR.length) baixarGpx();
     S.reg = []; S.nbk = 0; S.nexp = 0; S.ebk = null;
+    TR = []; ultimoPt = null; trGravar();
     salvar(); armado = false;
     b.textContent = "Apagar tudo deste aparelho";
     desenharLista(); pintar();
@@ -1372,10 +1509,11 @@ footer{
   window.addEventListener("beforeunload", function (ev) {
     if (pendentes() > 0) { ev.preventDefault(); ev.returnValue = ""; return ""; }
   });
-  window.addEventListener("pagehide", function () { lsGravar(); idbGravar(); });
+  window.addEventListener("pagehide", function () { lsGravar(); idbGravar(); trGravar(); });
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "hidden") { lsGravar(); idbGravar(); return; }
+    if (document.visibilityState === "hidden") { lsGravar(); idbGravar(); trGravar(); return; }
     if (!$("tScan").hidden && !fluxo) abrirCamera();
+    if ($("tAbertura").hidden) iniciarTrilha();
     manterAcesa();
   });
 
@@ -1384,6 +1522,7 @@ footer{
     navigator.serviceWorker.register("sw.js").catch(function () {});
   }
 
+  trLer();
   recuperar();
   mostrar("abertura");
 })();

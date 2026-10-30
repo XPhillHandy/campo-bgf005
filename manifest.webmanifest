@@ -1,0 +1,16 @@
+{
+  "name": "Cadastro de Campo BGF-005",
+  "short_name": "Campo BGF-005",
+  "description": "Leitura de plaquetas e cadastro de mudas em campo - Jaguar Solucoes Ambientais",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBFBF9",
+  "theme_color": "#396313",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "./icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

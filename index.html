@@ -99,6 +99,10 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
 .btn-p{background:var(--verde);color:#fff}
 .btn-s{background:var(--carta);color:var(--cinza);border:1.5px solid var(--borda)}
 .btn-g{background:var(--carta);color:var(--erro);border:1.5px solid var(--borda)}
+.btn-f{background:color-mix(in srgb,var(--alerta) 14%,var(--carta));color:var(--alerta);
+  border:1.5px solid var(--alerta);min-height:48px;font-size:.95rem}
+.motivos{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem}
+.motivos .btn-mini.on{background:var(--alerta);color:#fff;border-color:var(--alerta)}
 .btn[disabled]{opacity:.45;pointer-events:none}
 .btn-mini{min-height:42px;font-size:.85rem;border-radius:8px;padding:.4rem .6rem}
 
@@ -123,6 +127,13 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
 .chip.atual{border-color:var(--verde);background:color-mix(in srgb,var(--verde) 12%,var(--papel))}
 .chip.anc{min-width:auto;border-top-color:var(--verde);padding-inline:.5rem}
 .chip.anc .chip-n{font-size:.78rem;color:var(--verde)}
+.chip.falha{border-style:dashed;border-top-style:solid;border-top-color:var(--alerta);
+  background:color-mix(in srgb,var(--alerta) 10%,var(--papel))}
+.chip.falha .chip-n{color:var(--alerta)}
+.li-falha{flex:1;color:var(--alerta);font-weight:600;font-size:.88rem;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cartao.falha{border-color:var(--alerta);border-left-color:var(--alerta);
+  background:color-mix(in srgb,var(--alerta) 9%,var(--carta))}
 .trilha-vazia{color:var(--fraco);font-size:.8rem;padding-left:.2rem}
 
 /* ---------- resultado ---------- */
@@ -257,6 +268,7 @@ footer{
       <button class="btn btn-s btn-mini" id="bIni">Ponto início</button>
       <button class="btn btn-s btn-mini" id="bFim">Ponto fim</button>
     </div>
+    <button class="btn btn-f" id="bSemLeitura">Marcar muda sem leitura</button>
     <div class="acoes">
       <button class="btn btn-s btn-mini" id="bNova">Nova linha</button>
       <button class="btn btn-s btn-mini" id="bDigitar">Digitar</button>
@@ -279,6 +291,7 @@ footer{
   <div class="f-stat">
     <div class="f-item"><div class="f-n num" id="fTot">0</div><div class="f-l">mudas hoje</div></div>
     <div class="f-item"><div class="f-n num" id="fLinhas">0</div><div class="f-l">linhas</div></div>
+    <div class="f-item"><div class="f-n num" id="fFalhas">0</div><div class="f-l">sem leitura</div></div>
     <div class="f-item"><div class="f-n num" id="fAnc">0</div><div class="f-l">pontos GPS</div></div>
   </div>
   <button class="btn btn-s btn-mini" id="bVerLista" style="flex:0 0 auto">Lista</button>
@@ -306,7 +319,15 @@ footer{
   <div class="modal-cx">
     <h2 id="cTit">Conferir muda</h2>
     <div class="cartao" id="cCartao" style="min-height:62px"></div>
-    <label class="campo-lbl" for="cNum">Trocar o número da plaqueta</label>
+    <div id="cMotivos" hidden>
+      <div class="campo-lbl" style="margin-bottom:.35rem">O que houve com a plaqueta</div>
+      <div class="motivos">
+        <button class="btn btn-s btn-mini" data-mot="ausente">Ausente</button>
+        <button class="btn btn-s btn-mini" data-mot="ilegivel">Ilegível</button>
+        <button class="btn btn-s btn-mini" data-mot="nao_leu">QR não leu</button>
+      </div>
+    </div>
+    <label class="campo-lbl" for="cNum">Número da plaqueta</label>
     <div class="prefixo">
       <span>BGF005 —</span>
       <input id="cNum" type="text" inputmode="numeric" maxlength="4" autocomplete="off">
@@ -458,9 +479,17 @@ footer{
 
   /* ================= CONSULTAS ================= */
   function mudas() { return S.reg.filter(function (r) { return r.t === "muda"; }); }
+  function falhas() { return S.reg.filter(function (r) { return r.t === "falha"; }); }
   function naLinha() {
     return S.reg.filter(function (r) {
       return r.t === "muda" && r.tal === S.tal && r.lin === S.lin;
+    });
+  }
+  /* Posições na linha = mudas lidas + lugares sem leitura. É a contagem que
+     mantém a sequência fiel ao campo e permite casar com o ortofoto depois. */
+  function posicoes() {
+    return S.reg.filter(function (r) {
+      return (r.t === "muda" || r.t === "falha") && r.tal === S.tal && r.lin === S.lin;
     });
   }
   function jaLido(cod) {
@@ -514,7 +543,7 @@ footer{
     itens.forEach(function (r, i) {
       var c = document.createElement("button");
       c.type = "button";
-      if (r.t !== "muda") {
+      if (r.t === "ini" || r.t === "fim") {
         c.className = "chip anc";
         var a = document.createElement("div"); a.className = "chip-o";
         a.textContent = r.t === "ini" ? "INÍCIO" : "FIM";
@@ -522,6 +551,13 @@ footer{
         b.textContent = "±" + r.ac.toFixed(0) + "m";
         c.appendChild(a); c.appendChild(b);
         c.disabled = true;
+      } else if (r.t === "falha") {
+        c.className = "chip falha" + (i === itens.length - 1 ? " atual" : "");
+        var fo = document.createElement("div"); fo.className = "chip-o"; fo.textContent = "nº " + r.ord;
+        var fn = document.createElement("div"); fn.className = "chip-n"; fn.textContent = "— ?";
+        c.appendChild(fo); c.appendChild(fn);
+        c.setAttribute("aria-label", "Lugar sem leitura, posição " + r.ord);
+        c.addEventListener("click", function () { abrirCorrecao(r.id); });
       } else {
         var e = especie(parseInt(r.cod.slice(-4), 10));
         c.className = "chip" + (i === itens.length - 1 ? " atual" : "");
@@ -542,24 +578,48 @@ footer{
   function abrirCorrecao(id) {
     var r = acharPorId(id); if (!r) return;
     idEmEdicao = id;
-    var e = especie(parseInt(r.cod.slice(-4), 10));
+    var falha = r.t === "falha";
+    var e = falha ? null : especie(parseInt(r.cod.slice(-4), 10));
     var cx = $("cCartao");
-    cx.className = "cartao";
-    cx.style.borderLeftColor = e ? e[1] : "var(--borda)";
+    cx.className = "cartao" + (falha ? " falha" : "");
+    cx.style.borderLeftColor = falha ? "var(--alerta)" : (e ? e[1] : "var(--borda)");
     cx.innerHTML = "";
     var l = document.createElement("div"); l.className = "c-l";
-    var a = document.createElement("div"); a.className = "c-cod num"; a.textContent = r.cod;
+    var a = document.createElement("div");
+    a.className = "c-cod" + (falha ? "" : " num");
+    a.textContent = falha ? "Sem leitura" : r.cod;
     var b = document.createElement("div"); b.className = "c-esp";
-    b.textContent = (e ? e[0] : "fora da faixa") + " · T" + r.tal + " · L" + r.lin;
+    b.textContent = (falha ? rotuloMotivo(r.motivo) : (e ? e[0] : "fora da faixa"))
+      + " · T" + r.tal + " · L" + r.lin;
     l.appendChild(a); l.appendChild(b);
     var d = document.createElement("div"); d.className = "c-r";
     var o = document.createElement("div"); o.className = "c-ord num"; o.textContent = r.ord;
+    if (falha) o.style.color = "var(--alerta)";
     var ol = document.createElement("div"); ol.className = "c-ordl"; ol.textContent = "na linha";
     d.appendChild(o); d.appendChild(ol);
     cx.appendChild(l); cx.appendChild(d);
-    $("cNum").value = r.cod.slice(-4);
-    $("cEsp").textContent = "Confira contra a plaqueta da muda. Se bater, é só voltar.";
+
+    $("cTit").textContent = falha ? "Lugar sem leitura" : "Conferir muda";
+    $("cMotivos").hidden = !falha;
+    if (falha) marcarMotivo(r.motivo);
+    $("cNum").value = falha ? "" : r.cod.slice(-4);
+    $("cEsp").textContent = falha
+      ? "Se conseguir o número da plaqueta, digite e isto vira uma muda normal."
+      : "Confira contra a plaqueta da muda. Se bater, é só voltar.";
+    $("cSalvar").textContent = falha ? "Registrar o número" : "Salvar correção";
     $("modalC").hidden = false;
+  }
+
+  function rotuloMotivo(m) {
+    if (m === "ausente") return "plaqueta ausente";
+    if (m === "ilegivel") return "plaqueta ilegível";
+    if (m === "nao_leu") return "QR não leu";
+    return "plaqueta não lida";
+  }
+  function marcarMotivo(m) {
+    [].forEach.call($("cMotivos").querySelectorAll("button"), function (b) {
+      b.classList.toggle("on", b.getAttribute("data-mot") === m);
+    });
   }
   function acharPorId(id) {
     for (var i = 0; i < S.reg.length; i++) if (S.reg[i].id === id) return S.reg[i];
@@ -568,13 +628,15 @@ footer{
 
   function pintar() {
     $("hCtx").textContent = "T" + (S.tal || "–") + " · L" + (S.lin || "–") + "  ·  " + (S.tec || "");
-    $("hLin").textContent = naLinha().length;
+    $("hLin").textContent = posicoes().length;
     $("fTot").textContent = mudas().length;
     var ls = {}, anc = 0;
     S.reg.forEach(function (r) {
-      if (r.t === "muda") ls[r.tal + "|" + r.lin] = 1; else anc++;
+      if (r.t === "muda" || r.t === "falha") ls[r.tal + "|" + r.lin] = 1;
+      if (r.t === "ini" || r.t === "fim") anc++;
     });
     $("fLinhas").textContent = Object.keys(ls).length;
+    $("fFalhas").textContent = falhas().length;
     $("fAnc").textContent = anc;
     desenharTrilha();
   }
@@ -624,7 +686,7 @@ footer{
     var e = especie(n);
     var r = {
       id: uid(), t: "muda", cod: cod, tec: S.tec, tal: S.tal, lin: S.lin,
-      ord: naLinha().length + 1, esp: e ? e[0] : "", ts: new Date().toISOString(),
+      ord: posicoes().length + 1, esp: e ? e[0] : "", ts: new Date().toISOString(),
       org: origem || "qr"
     };
     S.reg.push(r); salvar();
@@ -632,6 +694,50 @@ footer{
     cartaoOk(r, e);
     pintar();
     talvezBackup();
+  }
+
+  /* ---- lugar sem leitura: guarda a posição na fila, sem código ---- */
+  function registrarFalha() {
+    var r = {
+      id: uid(), t: "falha", cod: "", tec: S.tec, tal: S.tal, lin: S.lin,
+      ord: posicoes().length + 1, esp: "", motivo: "sem_leitura",
+      ts: new Date().toISOString(), org: "falha"
+    };
+    S.reg.push(r); salvar();
+    bip(520, 150); vibra([60, 45, 60]);
+    cartaoFalha(r);
+    pintar();
+    pontoRapido(r);
+    talvezBackup();
+  }
+
+  /* uma única leitura de GPS, sem travar o trabalho — só para a bióloga achar depois */
+  function pontoRapido(r) {
+    if (!navigator.geolocation) return;
+    try {
+      navigator.geolocation.getCurrentPosition(function (p) {
+        r.la = p.coords.latitude; r.lo = p.coords.longitude; r.ac = p.coords.accuracy;
+        salvar(); pintar();
+      }, function () {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
+    } catch (e) {}
+  }
+
+  function cartaoFalha(r) {
+    var c = $("cRes");
+    c.className = "cartao falha"; c.style.borderLeftColor = "var(--alerta)";
+    c.innerHTML = "";
+    var l = document.createElement("div"); l.className = "c-l";
+    var a = document.createElement("div"); a.className = "c-cod"; a.textContent = "Sem leitura";
+    var b = document.createElement("div"); b.className = "c-esp";
+    b.textContent = "Posição guardada. Toque na trilha para registrar o número depois.";
+    l.appendChild(a); l.appendChild(b);
+    var d = document.createElement("div"); d.className = "c-r";
+    var o = document.createElement("div"); o.className = "c-ord num"; o.textContent = r.ord;
+    o.style.color = "var(--alerta)";
+    var ol = document.createElement("div"); ol.className = "c-ordl"; ol.textContent = "na linha";
+    d.appendChild(o); d.appendChild(ol);
+    c.appendChild(l); c.appendChild(d);
+    piscaMira();
   }
 
   function cartaoOk(r, e) {
@@ -838,14 +944,27 @@ footer{
       var e1 = document.createElement("span");
       e1.textContent = "Talhão " + k.split("|")[0] + " · Linha " + k.split("|")[1];
       var e2 = document.createElement("span");
-      e2.textContent = itens.filter(function (o) { return o.r.t === "muda"; }).length + " mudas";
+      var nm = itens.filter(function (o) { return o.r.t === "muda"; }).length;
+      var nf = itens.filter(function (o) { return o.r.t === "falha"; }).length;
+      e2.textContent = nm + " mudas" + (nf ? "  ·  " + nf + " sem leitura" : "");
       h.appendChild(e1); h.appendChild(e2); g.appendChild(h);
       itens.forEach(function (o) {
         var r = o.r, li = document.createElement("div"); li.className = "linha-item";
-        if (r.t !== "muda") {
+        if (r.t === "ini" || r.t === "fim") {
           var a = document.createElement("div"); a.className = "li-anc";
           a.textContent = (r.t === "ini" ? "▸ Ponto início" : "▪ Ponto fim") + " · ±" + r.ac.toFixed(0) + " m";
           li.appendChild(a);
+        } else if (r.t === "falha") {
+          var fod = document.createElement("div"); fod.className = "li-ord num"; fod.textContent = r.ord;
+          var ff = document.createElement("div"); ff.className = "li-falha";
+          ff.textContent = "— sem leitura · " + rotuloMotivo(r.motivo);
+          var fx = document.createElement("button");
+          fx.className = "li-x"; fx.type = "button"; fx.textContent = "✎";
+          fx.style.color = "var(--alerta)";
+          fx.setAttribute("aria-label", "Registrar o número desta posição");
+          li.appendChild(fod); li.appendChild(ff); li.appendChild(fx);
+          li.style.cursor = "pointer";
+          li.addEventListener("click", function () { abrirCorrecao(r.id); });
         } else {
           var e = especie(parseInt(r.cod.slice(-4), 10));
           var pt = document.createElement("div"); pt.className = "ponto";
@@ -879,14 +998,15 @@ footer{
   function renumerar(tal, lin) {
     var k = 0;
     S.reg.forEach(function (r) {
-      if (r.t === "muda" && r.tal === tal && r.lin === lin) { k++; r.ord = k; }
+      if ((r.t === "muda" || r.t === "falha") && r.tal === tal && r.lin === lin) { k++; r.ord = k; }
     });
   }
 
   /* ================= CAMADA 3: EXPORTAÇÃO ================= */
   function csv() {
     var cab = ["tipo", "tecnico", "talhao", "linha", "ordem", "codigo", "especie",
-      "data_hora", "latitude", "longitude", "precisao_m", "origem", "id"];
+      "data_hora", "latitude", "longitude", "precisao_m", "motivo", "origem", "id"];
+    var TIPO = { muda: "muda", falha: "sem_leitura", ini: "ancora_inicio", fim: "ancora_fim" };
     var num = function (v, d) { return v == null ? "" : String(v.toFixed(d)).replace(".", ","); };
     var esc = function (v) {
       v = v == null ? "" : String(v);
@@ -895,9 +1015,9 @@ footer{
     var ls = [cab.join(";")];
     S.reg.forEach(function (r) {
       ls.push([
-        r.t === "muda" ? "muda" : (r.t === "ini" ? "ancora_inicio" : "ancora_fim"),
+        TIPO[r.t] || r.t,
         r.tec, r.tal, r.lin, r.ord || "", r.cod || "", r.esp || "", r.ts,
-        num(r.la, 7), num(r.lo, 7), num(r.ac, 1), r.org || "", r.id || ""
+        num(r.la, 7), num(r.lo, 7), num(r.ac, 1), r.motivo || "", r.org || "", r.id || ""
       ].map(esc).join(";"));
     });
     return "\ufeff" + ls.join("\r\n");
@@ -1003,13 +1123,17 @@ footer{
     $("modal").hidden = true;
   });
 
+  $("bSemLeitura").addEventListener("click", registrarFalha);
+
   $("bDesfazer").addEventListener("click", function () {
     for (var i = S.reg.length - 1; i >= 0; i--) {
-      if (S.reg[i].t === "muda") {
+      if (S.reg[i].t === "muda" || S.reg[i].t === "falha") {
         var r = S.reg[i]; S.reg.splice(i, 1); renumerar(r.tal, r.lin); salvar();
         ultimoCod = ""; bip(420, 110); vibra(60);
         var c = $("cRes"); c.className = "cartao vazio"; c.style.borderLeftColor = "var(--borda)";
-        c.textContent = "Removido " + r.cod + " — pode ler de novo";
+        c.textContent = r.t === "falha"
+          ? "Lugar sem leitura removido"
+          : "Removido " + r.cod + " — pode ler de novo";
         pintar(); return;
       }
     }
@@ -1022,11 +1146,34 @@ footer{
       : ($("cNum").value.length >= 4 ? "Fora da faixa 0001–1368" : "Confira contra a plaqueta da muda.");
   });
   $("cFechar").addEventListener("click", function () { $("modalC").hidden = true; idEmEdicao = null; });
+  [].forEach.call($("cMotivos").querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () {
+      var r = acharPorId(idEmEdicao); if (!r) return;
+      r.motivo = b.getAttribute("data-mot");
+      marcarMotivo(r.motivo); salvar(); pintar();
+      if (!$("tLista").hidden) desenharLista();
+    });
+  });
   $("cSalvar").addEventListener("click", function () {
     var r = acharPorId(idEmEdicao); if (!r) return;
     var n = parseInt($("cNum").value, 10);
     if (!(n >= 1 && n <= 1368)) { $("cEsp").textContent = "Número inválido. Use de 0001 a 1368."; return; }
     var novo = "BGF005-" + String(n).padStart(4, "0");
+    if (r.t === "falha") {
+      var dup = jaLido(novo);
+      if (dup) {
+        $("cEsp").textContent = "Esse número já está em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ").";
+        return;
+      }
+      var ef = especie(n);
+      r.t = "muda"; r.cod = novo; r.esp = ef ? ef[0] : "";
+      r.corr = new Date().toISOString();
+      salvar(); pintar();
+      if (!$("tLista").hidden) desenharLista();
+      bip(880, 110); vibra(45);
+      $("modalC").hidden = true; idEmEdicao = null;
+      return;
+    }
     if (novo !== r.cod) {
       var outro = jaLido(novo);
       if (outro && outro.id !== r.id) {

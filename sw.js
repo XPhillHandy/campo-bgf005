@@ -1,9 +1,9 @@
 /* Service worker - deixa o app abrir sem nenhum sinal de internet.
    Guarda a pagina inteira e a biblioteca de leitura de QR no aparelho,
    na primeira visita com rede. Depois disso nunca mais precisa de dados. */
-var CACHE = "bgf005-campo-v3";
+var CACHE = "bgf005-campo-v4";
 var JSQR = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
-var ARQ = ["./", "./index.html", "./manifest.webmanifest", "./icone.svg", JSQR];
+var ARQ = ["./", "./manifest.webmanifest", "./icone.svg", JSQR];
 
 self.addEventListener("install", function (e) {
   self.skipWaiting();
@@ -34,7 +34,9 @@ self.addEventListener("fetch", function (e) {
           caches.open(CACHE).then(function (c) { c.put(e.request, cl); });
         }
         return resp;
-      }).catch(function () { return r || caches.match("./index.html"); });
+      }).catch(function () {
+        return r || caches.match("./");
+      });
       return r || rede;
     })
   );

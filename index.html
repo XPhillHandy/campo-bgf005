@@ -171,6 +171,34 @@ footer{
 .f-n{font-size:1.18rem;font-weight:700}
 .f-l{font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
 
+/* ---------- painel ---------- */
+.painel{padding-block:1rem;gap:.9rem}
+.prog-cx{background:var(--carta);border:1.5px solid var(--borda);border-radius:10px;
+  padding:.85rem .9rem;display:flex;flex-direction:column;gap:.5rem}
+.prog-topo{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}
+.prog-n{font-size:2rem;font-weight:700;line-height:1;letter-spacing:-.02em}
+.prog-de{font-size:.82rem;color:var(--fraco)}
+.prog-pct{font-size:1.5rem;font-weight:700;color:var(--verde);line-height:1}
+.barra{height:12px;border-radius:99px;background:color-mix(in srgb,var(--verde) 14%,var(--carta));
+  overflow:hidden;border:1px solid var(--borda)}
+.barra-f{height:100%;background:var(--verde);width:0;border-radius:99px}
+.minis{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.45rem}
+.mini{background:var(--carta);border:1.5px solid var(--borda);border-radius:9px;
+  padding:.5rem .3rem;text-align:center;line-height:1.2}
+.mini-n{font-size:1.25rem;font-weight:700}
+.mini-l{font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fraco)}
+.sec{margin:.4rem 0 0;font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--fraco);font-weight:700}
+.esp-lista{display:flex;flex-direction:column;gap:.4rem}
+.esp{background:var(--carta);border:1.5px solid var(--borda);border-radius:9px;
+  padding:.5rem .65rem;display:flex;align-items:center;gap:.6rem}
+.esp-i{flex:1;min-width:0;display:flex;flex-direction:column;gap:.3rem}
+.esp-top{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}
+.esp-nome{font-size:.9rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.esp-cnt{font-size:.82rem;color:var(--fraco);flex:0 0 auto}
+.esp-barra{height:6px;border-radius:99px;background:color-mix(in srgb,var(--cinza) 10%,var(--carta));overflow:hidden}
+.esp-barra i{display:block;height:100%;border-radius:99px}
+
 /* ---------- lista ---------- */
 .lista{padding-block:1rem;gap:.8rem}
 .grupo{background:var(--carta);border:1.5px solid var(--borda);border-radius:9px;overflow:hidden}
@@ -277,6 +305,33 @@ footer{
   </div>
 </main>
 
+<!-- ============ PAINEL ============ -->
+<main class="tela painel" id="tPainel" hidden>
+  <div class="prog-cx">
+    <div class="prog-topo">
+      <div><span class="prog-n num" id="pLidas">0</span><span class="prog-de"> de 1.368 plaquetas</span></div>
+      <div class="prog-pct num" id="pPct">0%</div>
+    </div>
+    <div class="barra"><div class="barra-f" id="pBarra"></div></div>
+    <div class="prog-sub nota" id="pSub">—</div>
+  </div>
+
+  <div class="minis">
+    <div class="mini"><div class="mini-n num" id="pFalhas">0</div><div class="mini-l">sem leitura</div></div>
+    <div class="mini"><div class="mini-n num" id="pLinhas">0</div><div class="mini-l">linhas</div></div>
+    <div class="mini"><div class="mini-n num" id="pTal">0</div><div class="mini-l">talhões</div></div>
+    <div class="mini"><div class="mini-n num" id="pGps">0</div><div class="mini-l">pontos GPS</div></div>
+  </div>
+
+  <h3 class="sec">Por espécie</h3>
+  <div id="pEspecies" class="esp-lista"></div>
+
+  <h3 class="sec">Por talhão e linha</h3>
+  <div id="pTalhoes" class="esp-lista"></div>
+
+  <p class="nota" id="pBackup"></p>
+</main>
+
 <!-- ============ LISTA ============ -->
 <main class="tela lista" id="tLista" hidden>
   <div id="infoBackup" class="nota"></div>
@@ -289,11 +344,11 @@ footer{
 
 <footer id="rodape" hidden>
   <div class="f-stat">
-    <div class="f-item"><div class="f-n num" id="fTot">0</div><div class="f-l">mudas hoje</div></div>
-    <div class="f-item"><div class="f-n num" id="fLinhas">0</div><div class="f-l">linhas</div></div>
+    <div class="f-item"><div class="f-n num" id="fTot">0</div><div class="f-l">mudas</div></div>
     <div class="f-item"><div class="f-n num" id="fFalhas">0</div><div class="f-l">sem leitura</div></div>
-    <div class="f-item"><div class="f-n num" id="fAnc">0</div><div class="f-l">pontos GPS</div></div>
+    <div class="f-item"><div class="f-n num" id="fPct">0%</div><div class="f-l">do total</div></div>
   </div>
+  <button class="btn btn-s btn-mini" id="bVerPainel" style="flex:0 0 auto">Painel</button>
   <button class="btn btn-s btn-mini" id="bVerLista" style="flex:0 0 auto">Lista</button>
   <button class="btn btn-s btn-mini" id="bVoltarScan" style="flex:0 0 auto" hidden>Câmera</button>
 </footer>
@@ -521,12 +576,110 @@ footer{
     $("tAbertura").hidden = qual !== "abertura";
     $("tScan").hidden = qual !== "scan";
     $("tLista").hidden = qual !== "lista";
+    $("tPainel").hidden = qual !== "painel";
     $("hdr").hidden = qual === "abertura";
     $("rodape").hidden = qual === "abertura";
     $("bVerLista").hidden = qual === "lista";
-    $("bVoltarScan").hidden = qual !== "lista";
+    $("bVerPainel").hidden = qual === "painel";
+    $("bVoltarScan").hidden = qual === "scan" || qual === "abertura";
     if (qual === "lista") desenharLista();
+    if (qual === "painel") desenharPainel();
     if (qual !== "scan") pararCamera(); else pintar();
+  }
+
+  /* ---- painel: quanto já foi feito, por espécie e por talhão ---- */
+  var POR_ESPECIE = 114, TOTAL_PLAQUETAS = 1368;
+
+  function desenharPainel() {
+    var md = mudas(), fl = falhas();
+    var pct = Math.round(md.length / TOTAL_PLAQUETAS * 100);
+    $("pLidas").textContent = md.length;
+    $("pPct").textContent = pct + "%";
+    $("pBarra").style.width = Math.min(100, pct) + "%";
+    $("pSub").textContent = "Faltam " + (TOTAL_PLAQUETAS - md.length) + " plaquetas"
+      + (fl.length ? ("  ·  " + fl.length + (fl.length === 1
+          ? " posição sem leitura para resolver"
+          : " posições sem leitura para resolver")) : "");
+
+    var linhas = {}, talhoes = {}, gps = 0;
+    S.reg.forEach(function (r) {
+      if (r.t === "muda" || r.t === "falha") {
+        linhas[r.tal + "|" + r.lin] = 1; talhoes[r.tal] = 1;
+      } else gps++;
+    });
+    $("pFalhas").textContent = fl.length;
+    $("pLinhas").textContent = Object.keys(linhas).length;
+    $("pTal").textContent = Object.keys(talhoes).length;
+    $("pGps").textContent = gps;
+
+    /* por espécie */
+    var cont = [];
+    for (var i = 0; i < ESP.length; i++) cont.push(0);
+    md.forEach(function (r) {
+      var n = parseInt(r.cod.slice(-4), 10);
+      if (n >= 1 && n <= TOTAL_PLAQUETAS) cont[Math.floor((n - 1) / POR_ESPECIE)]++;
+    });
+    var alvo = $("pEspecies"); alvo.innerHTML = "";
+    ESP.forEach(function (e, i) {
+      alvo.appendChild(barraItem(e[0], e[1], cont[i], POR_ESPECIE));
+    });
+
+    /* por talhão e linha */
+    var porLinha = {}, ordem = [];
+    S.reg.forEach(function (r) {
+      if (r.t !== "muda" && r.t !== "falha") return;
+      var k = "Talhão " + r.tal + " · Linha " + r.lin;
+      if (!porLinha[k]) { porLinha[k] = { m: 0, f: 0 }; ordem.push(k); }
+      if (r.t === "muda") porLinha[k].m++; else porLinha[k].f++;
+    });
+    var alvoT = $("pTalhoes"); alvoT.innerHTML = "";
+    if (!ordem.length) {
+      var v = document.createElement("div");
+      v.className = "vazio-msg";
+      v.textContent = "Nenhuma linha trabalhada ainda.";
+      alvoT.appendChild(v);
+    } else {
+      ordem.forEach(function (k) {
+        var d = porLinha[k];
+        alvoT.appendChild(linhaItem(k, d.m, d.f));
+      });
+    }
+
+    $("pBackup").textContent = S.ebk
+      ? ("Última cópia automática em Downloads: " + S.ebk + " — " + S.nbk + " registros.")
+      : "Nenhuma cópia automática ainda. A primeira sai na 25ª leitura.";
+  }
+
+  function barraItem(nome, cor, feito, total) {
+    var el = document.createElement("div"); el.className = "esp";
+    var pt = document.createElement("div"); pt.className = "ponto"; pt.style.background = cor;
+    var ic = document.createElement("div"); ic.className = "esp-i";
+    var topo = document.createElement("div"); topo.className = "esp-top";
+    var nm = document.createElement("div"); nm.className = "esp-nome"; nm.textContent = nome;
+    var ct = document.createElement("div"); ct.className = "esp-cnt num";
+    ct.textContent = feito + " / " + total;
+    topo.appendChild(nm); topo.appendChild(ct);
+    var ba = document.createElement("div"); ba.className = "esp-barra";
+    var fi = document.createElement("i");
+    fi.style.width = Math.min(100, Math.round(feito / total * 100)) + "%";
+    fi.style.background = cor;
+    ba.appendChild(fi);
+    ic.appendChild(topo); ic.appendChild(ba);
+    el.appendChild(pt); el.appendChild(ic);
+    return el;
+  }
+
+  function linhaItem(nome, m, f) {
+    var el = document.createElement("div"); el.className = "esp";
+    var ic = document.createElement("div"); ic.className = "esp-i";
+    var topo = document.createElement("div"); topo.className = "esp-top";
+    var nm = document.createElement("div"); nm.className = "esp-nome"; nm.textContent = nome;
+    var ct = document.createElement("div"); ct.className = "esp-cnt num";
+    ct.textContent = m + " mudas" + (f ? "  ·  " + f + " sem leitura" : "");
+    topo.appendChild(nm); topo.appendChild(ct);
+    ic.appendChild(topo);
+    el.appendChild(ic);
+    return el;
   }
 
   /* ---- trilha: mapa do que já foi lido na linha em curso ---- */
@@ -629,15 +782,10 @@ footer{
   function pintar() {
     $("hCtx").textContent = "T" + (S.tal || "–") + " · L" + (S.lin || "–") + "  ·  " + (S.tec || "");
     $("hLin").textContent = posicoes().length;
-    $("fTot").textContent = mudas().length;
-    var ls = {}, anc = 0;
-    S.reg.forEach(function (r) {
-      if (r.t === "muda" || r.t === "falha") ls[r.tal + "|" + r.lin] = 1;
-      if (r.t === "ini" || r.t === "fim") anc++;
-    });
-    $("fLinhas").textContent = Object.keys(ls).length;
+    var nm = mudas().length;
+    $("fTot").textContent = nm;
     $("fFalhas").textContent = falhas().length;
-    $("fAnc").textContent = anc;
+    $("fPct").textContent = Math.round(nm / 1368 * 100) + "%";
     desenharTrilha();
   }
 
@@ -1199,6 +1347,7 @@ footer{
   $("bIni").addEventListener("click", function () { marcarAncora("ini", this); });
   $("bFim").addEventListener("click", function () { marcarAncora("fim", this); });
   $("bVerLista").addEventListener("click", function () { mostrar("lista"); });
+  $("bVerPainel").addEventListener("click", function () { mostrar("painel"); });
   $("bVoltarScan").addEventListener("click", function () { mostrar("scan"); abrirCamera(); });
   $("bCsv").addEventListener("click", function () { baixar(false); });
   $("bCopiar").addEventListener("click", copiar);

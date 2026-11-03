@@ -101,8 +101,16 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
 .btn-g{background:var(--carta);color:var(--erro);border:1.5px solid var(--borda)}
 .btn-f{background:color-mix(in srgb,var(--alerta) 14%,var(--carta));color:var(--alerta);
   border:1.5px solid var(--alerta);min-height:48px;font-size:.95rem}
-.btn-dig{background:var(--verde);color:#fff;min-height:64px;font-size:1.12rem;
-  border-radius:0;width:100%;flex:0 0 auto;border-bottom:1.5px solid rgba(0,0,0,.12)}
+.dig{display:flex;align-items:center;gap:.55rem;flex:0 0 auto;background:var(--verde);
+  padding:.5rem max(14px,env(safe-area-inset-left,0px));border-bottom:1.5px solid rgba(0,0,0,.14)}
+.dig-px{color:#fff;font-weight:700;font-size:.95rem;opacity:.85;flex:0 0 auto}
+.dig input{width:5.4rem;flex:0 0 auto;font-size:1.6rem;font-weight:700;text-align:center;
+  border:0;border-radius:8px;padding:.3rem .2rem;background:#fff;color:var(--cinza);
+  font-variant-numeric:tabular-nums;letter-spacing:.08em}
+.dig input::placeholder{color:#C3C7BC;letter-spacing:.08em}
+.dig-esp{color:#fff;font-size:.82rem;line-height:1.25;flex:1 1 auto;min-width:0}
+.dig.erro{background:var(--erro)}
+.dig.ok{background:var(--verde-claro)}
 .aviso-zero{background:var(--carta);border:1.5px solid var(--borda);border-left:5px solid var(--fraco);
   border-radius:9px;padding:.7rem .8rem;font-size:.85rem;color:var(--cinza);line-height:1.45}
 .aviso-zero.perigo{border-left-color:var(--alerta)}
@@ -299,7 +307,12 @@ footer{
     <div class="cam-msg" id="camMsg" hidden></div>
   </div>
 
-  <button class="btn btn-dig" id="bDigitarG">Digitar o número à mão</button>
+  <div class="dig" id="digCx">
+    <span class="dig-px">BGF005</span>
+    <input id="dNum" type="text" inputmode="numeric" maxlength="4" placeholder="0000"
+           autocomplete="off" enterkeyhint="done" aria-label="Número da plaqueta">
+    <span class="dig-esp" id="dEsp">digite o número da plaqueta</span>
+  </div>
 
   <div class="trilha-cx">
     <div class="trilha" id="trilha"></div>
@@ -307,10 +320,6 @@ footer{
 
   <div class="res">
     <div class="cartao vazio" id="cRes">Aponte para o QR da plaqueta</div>
-    <div class="ancoras">
-      <button class="btn btn-s btn-mini" id="bIni">Ponto início</button>
-      <button class="btn btn-s btn-mini" id="bFim">Ponto fim</button>
-    </div>
     <button class="btn btn-f" id="bSemLeitura">Marcar muda sem leitura</button>
     <div class="ancoras">
       <button class="btn btn-s btn-mini" id="bNova">Nova linha</button>
@@ -376,22 +385,6 @@ footer{
   <button class="btn btn-s btn-mini" id="bVerLista" style="flex:0 0 auto">Lista</button>
   <button class="btn btn-s btn-mini" id="bVoltarScan" style="flex:0 0 auto" hidden>Câmera</button>
 </footer>
-
-<!-- ============ MODAL DIGITAR ============ -->
-<div class="modal" id="modal" hidden>
-  <div class="modal-cx">
-    <h2>Digitar o número da plaqueta</h2>
-    <div class="prefixo">
-      <span>BGF005 —</span>
-      <input id="mNum" type="text" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off">
-    </div>
-    <div id="mEsp" class="nota">Espécie prevista aparece aqui.</div>
-    <div class="dupla">
-      <button class="btn btn-s" id="mCancelar">Cancelar</button>
-      <button class="btn btn-p" id="mOk">Registrar</button>
-    </div>
-  </div>
-</div>
 
 <!-- ============ MODAL CORREÇÃO ============ -->
 <div class="modal" id="modalC" hidden>
@@ -1516,13 +1509,32 @@ footer{
   }
 
   /* ================= LIGAÇÕES ================= */
+  /* Talhao e linha sempre com dois digitos: "1" e "01" tem de ser a mesma
+     linha, senao a sequencia se parte em duas e o croqui nao fecha. */
+  function doisDig(v) {
+    v = String(v == null ? "" : v).trim();
+    var n = parseInt(v.replace(/\D/g, ""), 10);
+    return isNaN(n) ? "01" : String(n).padStart(2, "0");
+  }
+
   function entrarNoScan() {
     S.tec = $("fTec").value.trim();
-    S.tal = $("fTal").value.trim() || "01";
-    S.lin = $("fLin").value.trim() || "01";
+    S.tal = doisDig($("fTal").value);
+    S.lin = doisDig($("fLin").value);
     if (!S.tec) { $("fTec").focus(); return; }
+    $("fTal").value = S.tal; $("fLin").value = S.lin;
     salvar(); bip(760, 60);
     mostrar("scan"); abrirCamera(); iniciarTrilha();
+
+    /* linha ja comecada: mostra onde parou, para ninguem refazer trecho */
+    var p = posicoes();
+    if (p.length) {
+      var u = p[p.length - 1];
+      cartaoAviso("T" + S.tal + " · L" + S.lin,
+        "Esta linha já tem " + p.length + " posições. A última foi "
+        + (u.cod || "um lugar sem leitura") + " (nº " + u.ord
+        + "). Continue da próxima muda, no mesmo sentido.");
+    }
   }
   $("bComecar").addEventListener("click", entrarNoScan);
   $("bRetomar").addEventListener("click", entrarNoScan);
@@ -1538,23 +1550,38 @@ footer{
     $("fLin").focus(); $("fLin").select();
   });
 
-  function abrirDigitar() {
-    $("modal").hidden = false; $("mNum").value = "";
-    $("mEsp").textContent = "Espécie prevista aparece aqui.";
-    setTimeout(function () { $("mNum").focus(); }, 60);
+  /* ---- digitacao: e o caminho principal, nao o atalho ----
+     Metade das plaquetas nao le por QR por causa do plastico. Ao completar
+     4 digitos validos o registro entra sozinho e o campo ja fica pronto
+     para a proxima, sem nenhum toque a mais. */
+  function digMsg(txt, classe) {
+    $("dEsp").textContent = txt;
+    var cx = $("digCx");
+    cx.classList.remove("erro"); cx.classList.remove("ok");
+    if (classe) cx.classList.add(classe);
   }
-  $("bDigitarG").addEventListener("click", abrirDigitar);
-  $("mNum").addEventListener("input", function () {
-    var n = parseInt($("mNum").value, 10), e = especie(n);
-    $("mEsp").textContent = e ? ("Prevista: " + e[0])
-      : ($("mNum").value.length >= 4 ? "Fora da faixa 0001–1368" : "Espécie prevista aparece aqui.");
-  });
-  $("mCancelar").addEventListener("click", function () { $("modal").hidden = true; });
-  $("mOk").addEventListener("click", function () {
-    var n = parseInt($("mNum").value, 10);
-    if (!(n >= 1 && n <= 1368)) { $("mEsp").textContent = "Número inválido. Use de 0001 a 1368."; return; }
-    ultimoCod = ""; registrar("BGF005-" + String(n).padStart(4, "0"), "manual");
-    $("modal").hidden = true;
+
+  $("dNum").addEventListener("input", function () {
+    var v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v !== this.value) this.value = v;
+    if (v.length < 4) {
+      digMsg(v.length ? ("faltam " + (4 - v.length) + " dígito" + (v.length === 3 ? "" : "s"))
+                      : "digite o número da plaqueta");
+      return;
+    }
+    var n = parseInt(v, 10), e = especie(n);
+    if (!e) { digMsg("fora da faixa 0001 a 1368", "erro"); bip(300, 260); vibra([80, 60, 80]); return; }
+    var cod = "BGF005-" + v, dup = jaLido(cod);
+    if (dup) {
+      digMsg(cod + " já foi lido em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ")", "erro");
+      bip(300, 320); vibra([90, 70, 90]);
+      return;
+    }
+    ultimoCod = "";
+    registrar(cod, "manual");
+    this.value = "";
+    digMsg(e[0] + " registrada · pode digitar a próxima", "ok");
+    setTimeout(function () { digMsg("digite o número da plaqueta"); }, 2200);
   });
 
   $("bSemLeitura").addEventListener("click", registrarFalha);
@@ -1639,8 +1666,6 @@ footer{
     $("modalC").hidden = true; idEmEdicao = null;
   });
 
-  $("bIni").addEventListener("click", function () { marcarAncora("ini", this); });
-  $("bFim").addEventListener("click", function () { marcarAncora("fim", this); });
   $("bVerLista").addEventListener("click", function () { mostrar("lista"); });
   $("bVerPainel").addEventListener("click", function () { mostrar("painel"); });
   $("bGpx").addEventListener("click", baixarGpx);

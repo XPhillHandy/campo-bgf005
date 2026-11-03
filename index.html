@@ -133,6 +133,16 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
 .mira{position:absolute;inset:16% 14%;border:3px solid rgba(255,255,255,.85);border-radius:14px;
   box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
 .mira.hit{border-color:#8BC34A}
+.flash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:.2rem;text-align:center;padding:1rem;pointer-events:none;
+  opacity:0;transition:opacity .12s;z-index:4;color:#fff}
+.flash.on{opacity:1}
+.flash.ok{background:rgba(57,99,19,.92)}
+.flash.aviso{background:rgba(180,83,9,.94)}
+.flash.erro{background:rgba(179,38,30,.94)}
+.flash-a{font-size:2.1rem;font-weight:800;letter-spacing:.02em;line-height:1.05;
+  font-variant-numeric:tabular-nums}
+.flash-b{font-size:1rem;font-weight:600;opacity:.95;line-height:1.2}
 .cam-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   text-align:center;color:#fff;padding:1.2rem;font-size:.9rem;line-height:1.5}
 
@@ -304,6 +314,7 @@ footer{
   <div class="visor">
     <video id="vid" playsinline muted></video>
     <div class="mira" id="mira"></div>
+    <div class="flash" id="flash"><div class="flash-a" id="flashA"></div><div class="flash-b" id="flashB"></div></div>
     <div class="cam-msg" id="camMsg" hidden></div>
   </div>
 
@@ -391,6 +402,10 @@ footer{
   <div class="modal-cx">
     <h2 id="cTit">Conferir muda</h2>
     <div class="cartao" id="cCartao" style="min-height:62px"></div>
+    <div id="cEspecies" hidden>
+      <div class="campo-lbl" style="margin-bottom:.35rem">Você reconhece a espécie? Toque nela.</div>
+      <div class="esp-grid" id="cGrade"></div>
+    </div>
     <div id="cMotivos" hidden>
       <div class="campo-lbl" style="margin-bottom:.35rem">O que houve com a plaqueta</div>
       <div class="motivos">
@@ -398,10 +413,6 @@ footer{
         <button class="btn btn-s btn-mini" data-mot="ilegivel">Ilegível</button>
         <button class="btn btn-s btn-mini" data-mot="nao_leu">QR não leu</button>
       </div>
-    </div>
-    <div id="cEspecies" hidden>
-      <div class="campo-lbl" style="margin-bottom:.35rem">Espécie, se der para reconhecer</div>
-      <div class="esp-grid" id="cGrade"></div>
     </div>
     <label class="campo-lbl" for="cNum">Número da plaqueta</label>
     <div class="prefixo">
@@ -641,14 +652,29 @@ footer{
 
   /* ================= SOM E VIBRAÇÃO ================= */
   var ctxAudio = null;
-  function bip(freq, ms) {
+  /* O som do navegador so liga depois de um toque, e o contexto nasce
+     suspenso. Sem destravar no primeiro toque da tela, nenhum apito sai. */
+  function destravarSom() {
     try {
       if (!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
       if (ctxAudio.state === "suspended") ctxAudio.resume();
+      var b = ctxAudio.createBufferSource();
+      b.buffer = ctxAudio.createBuffer(1, 1, 22050);
+      b.connect(ctxAudio.destination); b.start(0);
+    } catch (e) {}
+  }
+  ["pointerdown", "touchstart", "keydown"].forEach(function (ev) {
+    document.addEventListener(ev, destravarSom, { capture: true });
+  });
+
+  function bip(freq, ms) {
+    try {
+      if (!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctxAudio.state === "suspended") { ctxAudio.resume(); }
       var o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
       o.type = "sine"; o.frequency.value = freq;
       g.gain.setValueAtTime(0.0001, ctxAudio.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.25, ctxAudio.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.7, ctxAudio.currentTime + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, ctxAudio.currentTime + ms / 1000);
       o.connect(g); g.connect(ctxAudio.destination);
       o.start(); o.stop(ctxAudio.currentTime + ms / 1000 + 0.02);
@@ -853,7 +879,7 @@ footer{
     d.appendChild(o); d.appendChild(ol);
     cx.appendChild(l); cx.appendChild(d);
 
-    $("cTit").textContent = falha ? "Lugar sem leitura" : "Conferir muda";
+    $("cTit").textContent = falha ? "Que espécie é esta muda?" : "Conferir muda";
     $("cMotivos").hidden = !falha;
     $("cEspecies").hidden = !falha;
     if (falha) { marcarMotivo(r.motivo); montarGrade(); marcarEspecie(r.espI); }
@@ -1002,7 +1028,8 @@ footer{
 
     var dup = jaLido(cod);
     if (dup) {
-      bip(300, 320); vibra([90, 70, 90]);
+      bip(300, 320); vibra([120, 80, 120, 80, 120]);
+      flash("erro", "JÁ LIDO", cod + " está em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ")");
       cartaoAviso(cod, "Já lido em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ")");
       return;
     }
@@ -1015,7 +1042,8 @@ footer{
     };
     carimbarPos(r);
     S.reg.push(r); salvar();
-    bip(880, 110); vibra(45);
+    bip(880, 110); vibra([50, 40, 90]);
+    flash("ok", cod.slice(-4), (e ? e[0] : "fora da faixa") + "  ·  nº " + r.ord);
     cartaoOk(r, e);
     pintar();
     talvezBackup();
@@ -1030,11 +1058,14 @@ footer{
     };
     carimbarPos(r);
     S.reg.push(r); salvar();
-    bip(520, 150); vibra([60, 45, 60]);
+    bip(520, 150); vibra([80, 50, 80]);
+    flash("aviso", "SEM LEITURA", "nº " + r.ord + "  ·  diga a espécie na tela seguinte");
     cartaoFalha(r);
     pintar();
     if (!posAtual) pontoRapido(r);
     talvezBackup();
+    /* pergunta a especie na hora: escondido no modal, ninguem achava */
+    setTimeout(function () { abrirCorrecao(r.id); }, 420);
   }
 
   /* reserva: se o rastro estiver desligado, pega uma leitura só */
@@ -1094,6 +1125,18 @@ footer{
     var a = document.createElement("div"); a.className = "c-cod num"; a.textContent = cod;
     var b = document.createElement("div"); b.className = "c-esp"; b.textContent = msg;
     l.appendChild(a); l.appendChild(b); c.appendChild(l);
+  }
+
+  /* Aviso que nao depende de volume nem de vibracao: a camera inteira
+     pisca com o que acabou de entrar. E o unico que nunca falha no campo. */
+  var tFlash = null;
+  function flash(classe, titulo, linha) {
+    var f = $("flash");
+    $("flashA").textContent = titulo;
+    $("flashB").textContent = linha || "";
+    f.className = "flash on " + classe;
+    clearTimeout(tFlash);
+    tFlash = setTimeout(function () { f.className = "flash " + classe; }, classe === "ok" ? 700 : 1400);
   }
 
   var tMira = null;
@@ -1570,11 +1613,16 @@ footer{
       return;
     }
     var n = parseInt(v, 10), e = especie(n);
-    if (!e) { digMsg("fora da faixa 0001 a 1368", "erro"); bip(300, 260); vibra([80, 60, 80]); return; }
+    if (!e) {
+      digMsg("fora da faixa 0001 a 1368", "erro"); bip(300, 260); vibra([120, 80, 120]);
+      flash("erro", "NÚMERO INVÁLIDO", v + " está fora da faixa 0001 a 1368");
+      return;
+    }
     var cod = "BGF005-" + v, dup = jaLido(cod);
     if (dup) {
       digMsg(cod + " já foi lido em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ")", "erro");
-      bip(300, 320); vibra([90, 70, 90]);
+      bip(300, 320); vibra([120, 80, 120, 80, 120]);
+      flash("erro", "JÁ LIDO", cod + " está em T" + dup.tal + " · L" + dup.lin + " (nº " + dup.ord + ")");
       return;
     }
     ultimoCod = "";

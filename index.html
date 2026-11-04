@@ -132,7 +132,14 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
 .visor video{width:100%;height:100%;object-fit:cover;display:block}
 .mira{position:absolute;inset:16% 14%;border:3px solid rgba(255,255,255,.85);border-radius:14px;
   box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
+.mira::after{content:"";position:absolute;inset:26%;border:2px dashed rgba(255,255,255,.6);
+  border-radius:8px}
 .mira.hit{border-color:#8BC34A}
+.cam-btns{position:absolute;top:.5rem;right:.5rem;display:flex;flex-direction:column;gap:.4rem;z-index:3}
+.cam-btn{background:rgba(0,0,0,.55);color:#fff;border:1.5px solid rgba(255,255,255,.55);
+  border-radius:9px;padding:.4rem .55rem;font-size:.8rem;font-weight:700;min-width:58px;
+  text-align:center;line-height:1.1}
+.cam-btn.on{background:rgba(92,143,42,.9);border-color:#fff}
 .flash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:.2rem;text-align:center;padding:1rem;pointer-events:none;
   opacity:0;transition:opacity .12s;z-index:4;color:#fff}
@@ -314,6 +321,10 @@ footer{
   <div class="visor">
     <video id="vid" playsinline muted></video>
     <div class="mira" id="mira"></div>
+    <div class="cam-btns">
+      <button type="button" class="cam-btn" id="bZoom" hidden>1×</button>
+      <button type="button" class="cam-btn" id="bLuz" hidden>luz</button>
+    </div>
     <div class="flash" id="flash"><div class="flash-a" id="flashA"></div><div class="flash-b" id="flashB"></div></div>
     <div class="cam-msg" id="camMsg" hidden></div>
   </div>
@@ -1206,13 +1217,17 @@ footer{
     }
     msgCam("Abrindo a câmera…");
     navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 2560 }, height: { ideal: 1440 },
+        frameRate: { ideal: 30 }
+      },
       audio: false
     }).then(function (f) {
       fluxo = f;
       var v = $("vid"); v.srcObject = f;
       v.play().catch(function () {});
-      msgCam(null); travarFoco(f); iniciarLeitura(); manterAcesa();
+      msgCam(null); travarFoco(f); prepararCamBtns(f); iniciarLeitura(); manterAcesa();
     }).catch(function (err) {
       var nome = err && err.name ? err.name : "";
       if (nome === "NotAllowedError")
@@ -1227,9 +1242,56 @@ footer{
       var tr = f.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {};
       var av = [];
       if (cap.focusMode && cap.focusMode.indexOf("continuous") >= 0) av.push({ focusMode: "continuous" });
+      if (cap.exposureMode && cap.exposureMode.indexOf("continuous") >= 0) av.push({ exposureMode: "continuous" });
+      if (cap.whiteBalanceMode && cap.whiteBalanceMode.indexOf("continuous") >= 0) av.push({ whiteBalanceMode: "continuous" });
       if (av.length) tr.applyConstraints({ advanced: av });
     } catch (e) {}
   }
+
+  /* ---- zoom e lanterna ----
+     O QR dentro do plastico reflete. Aproximar com zoom enche o quadro com o
+     codigo sem a pessoa encostar o celular, e a luz ajuda quando a plaqueta
+     esta na sombra da propria muda. */
+  var zoomCap = null, zoomIdx = 0, zoomPassos = [1], temLuz = false;
+
+  function prepararCamBtns(f) {
+    var bz = $("bZoom"), bl = $("bLuz");
+    bz.hidden = true; bl.hidden = true;
+    try {
+      var tr = f.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {};
+      if (cap.zoom && cap.zoom.max > cap.zoom.min) {
+        zoomCap = cap.zoom;
+        var mx = Math.min(cap.zoom.max, cap.zoom.min * 4);
+        zoomPassos = [cap.zoom.min, cap.zoom.min + (mx - cap.zoom.min) / 2, mx];
+        zoomIdx = 0; bz.hidden = false; bz.textContent = "1×";
+      }
+      temLuz = !!cap.torch;
+      bl.hidden = !temLuz;
+    } catch (e) {}
+  }
+
+  function aplicarZoom() {
+    try {
+      var tr = fluxo && fluxo.getVideoTracks()[0];
+      if (!tr || !zoomCap) return;
+      tr.applyConstraints({ advanced: [{ zoom: zoomPassos[zoomIdx] }] });
+      $("bZoom").textContent = (zoomIdx === 0 ? "1" : zoomIdx === 1 ? "2" : "4") + "×";
+    } catch (e) {}
+  }
+
+  $("bZoom").addEventListener("click", function () {
+    zoomIdx = (zoomIdx + 1) % zoomPassos.length; aplicarZoom();
+  });
+
+  $("bLuz").addEventListener("click", function () {
+    try {
+      var tr = fluxo && fluxo.getVideoTracks()[0];
+      if (!tr || !temLuz) return;
+      var lig = !this.classList.contains("on");
+      tr.applyConstraints({ advanced: [{ torch: lig }] });
+      this.classList.toggle("on", lig);
+    } catch (e) {}
+  });
 
   var wl = null;
   function manterAcesa() {
@@ -1251,31 +1313,76 @@ footer{
     laco();
   }
 
-  var pulo = 0;
+  /* Duas escalas, alternando quadro a quadro: a larga pega a plaqueta onde
+     ela estiver dentro da mira; a fechada joga o miolo nos mesmos 900 px e
+     dobra o tamanho de cada quadradinho, que e o que faz o QR pequeno ler. */
+  var ESCALAS = [0.82, 0.42];
+  function recortarMiolo(v, qual) {
+    var w = v.videoWidth, h = v.videoHeight;
+    if (!w || !h) return false;
+    var f = ESCALAS[qual % ESCALAS.length];
+    var lado = Math.round(Math.min(w, h) * f);
+    var sx = Math.round((w - lado) / 2), sy = Math.round((h - lado) / 2);
+    var destino = 900;
+    cv.width = destino; cv.height = destino;
+    cx.imageSmoothingEnabled = true;
+    cx.imageSmoothingQuality = "high";
+    cx.drawImage(v, sx, sy, lado, lado, 0, 0, destino, destino);
+    return true;
+  }
+
+  /* Estica o contraste: o reflexo do plastico estoura o branco e apaga a
+     diferenca entre os quadradinhos. Reescalar entre o mais escuro e o mais
+     claro do recorte traz essa diferenca de volta. */
+  function realcar(d) {
+    var p = d.data, n = p.length, mn = 255, mx = 0, i, g;
+    for (i = 0; i < n; i += 16) {
+      g = (p[i] * 77 + p[i + 1] * 151 + p[i + 2] * 28) >> 8;
+      if (g < mn) mn = g;
+      if (g > mx) mx = g;
+    }
+    if (mx - mn < 25) return d;
+    var k = 255 / (mx - mn);
+    for (i = 0; i < n; i += 4) {
+      g = (p[i] * 77 + p[i + 1] * 151 + p[i + 2] * 28) >> 8;
+      g = (g - mn) * k;
+      g = g < 0 ? 0 : g > 255 ? 255 : g;
+      p[i] = p[i + 1] = p[i + 2] = g;
+    }
+    return d;
+  }
+
+  var passada = 0;
   function laco() {
     if (!rodando) return;
     var v = $("vid");
-    if (v.readyState < 2) { requestAnimationFrame(laco); return; }
-    pulo++;
-    if (pulo % 2 === 0) { requestAnimationFrame(laco); return; }
+    passada++;
+    if (v.readyState < 2 || !recortarMiolo(v, passada)) { requestAnimationFrame(laco); return; }
     if (detector) {
-      detector.detect(v).then(function (cods) {
-        if (cods && cods.length) tratarBruto(cods[0].rawValue);
+      detector.detect(cv).then(function (cods) {
+        if (cods && cods.length) { tratarBruto(cods[0].rawValue); requestAnimationFrame(laco); return; }
+        tentarJsQR();
         requestAnimationFrame(laco);
       }).catch(function () { detector = null; requestAnimationFrame(laco); });
       return;
     }
-    var L = 520, w = v.videoWidth, h = v.videoHeight;
-    if (!w || !h) { requestAnimationFrame(laco); return; }
-    var esc = Math.min(1, L / Math.max(w, h));
-    cv.width = Math.round(w * esc); cv.height = Math.round(h * esc);
-    cx.drawImage(v, 0, 0, cv.width, cv.height);
+    tentarJsQR();
+    requestAnimationFrame(laco);
+  }
+
+  function tentarJsQR() {
+    if (!window.jsQR) return;
     try {
       var d = cx.getImageData(0, 0, cv.width, cv.height);
-      var r = window.jsQR ? window.jsQR(d.data, d.width, d.height, { inversionAttempts: "dontInvert" }) : null;
+      var r = window.jsQR(d.data, d.width, d.height, { inversionAttempts: "dontInvert" });
+      if (!r || !r.data) {
+        if (passada % 2 === 0) {
+          var e = realcar(d);
+          r = window.jsQR(e.data, e.width, e.height, { inversionAttempts: "attemptBoth" });
+        }
+      }
       if (r && r.data) tratarBruto(r.data);
     } catch (e) {}
-    requestAnimationFrame(laco);
   }
 
   function tratarBruto(txt) {

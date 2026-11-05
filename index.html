@@ -248,6 +248,10 @@ footer{
 .li-cod{flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .li-esp{color:var(--fraco);font-size:.76rem;flex:0 0 auto;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .li-x{color:var(--verde);font-size:1.05rem;padding:0 .3rem;line-height:1;flex:0 0 auto}
+.li-gps{color:var(--fraco);font-size:.7rem;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.li-gps.sem{color:var(--erro);font-weight:700}
+.c-gps{font-size:.68rem;color:var(--fraco);margin-top:.12rem;font-variant-numeric:tabular-nums}
+.c-gps.sem{color:var(--erro);font-weight:700}
 .li-anc{color:var(--verde);font-weight:600;font-size:.82rem}
 .ponto{width:13px;height:13px;border-radius:50%;flex:0 0 auto;border:1px solid rgba(0,0,0,.18)}
 .vazio-msg{text-align:center;color:var(--fraco);padding:2.5rem 1rem;font-size:.9rem;line-height:1.6}
@@ -365,7 +369,7 @@ footer{
     <div class="mini"><div class="mini-n num" id="pFalhas">0</div><div class="mini-l">sem leitura</div></div>
     <div class="mini"><div class="mini-n num" id="pLinhas">0</div><div class="mini-l">linhas</div></div>
     <div class="mini"><div class="mini-n num" id="pTal">0</div><div class="mini-l">talhões</div></div>
-    <div class="mini"><div class="mini-n num" id="pGps">0</div><div class="mini-l">pontos GPS</div></div>
+    <div class="mini"><div class="mini-n num" id="pGps">0</div><div class="mini-l">com coordenada</div></div>
   </div>
 
   <h3 class="sec">Por espécie</h3>
@@ -723,11 +727,14 @@ footer{
           ? " posição sem leitura para resolver"
           : " posições sem leitura para resolver")) : "");
 
+    /* Conta posicoes que sairam com coordenada. Antes contava ancoras, que
+       deixaram de existir quando os botoes de inicio e fim sairam da tela. */
     var linhas = {}, talhoes = {}, gps = 0;
     S.reg.forEach(function (r) {
       if (r.t === "muda" || r.t === "falha") {
         linhas[r.tal + "|" + r.lin] = 1; talhoes[r.tal] = 1;
-      } else gps++;
+        if (r.la != null) gps++;
+      }
     });
     $("pFalhas").textContent = fl.length;
     $("pLinhas").textContent = Object.keys(linhas).length;
@@ -1053,6 +1060,9 @@ footer{
     };
     carimbarPos(r);
     S.reg.push(r); salvar();
+    /* GPS ainda sem fixo (primeiras leituras do dia): pede uma posicao
+       avulsa e preenche o registro depois, em vez de perder a coordenada. */
+    if (!posAtual) pontoRapido(r);
     bip(880, 110); vibra([50, 40, 90]);
     flash("ok", cod.slice(-4), (e ? e[0] : "fora da faixa") + "  ·  nº " + r.ord);
     cartaoOk(r, e);
@@ -1103,7 +1113,7 @@ footer{
     var o = document.createElement("div"); o.className = "c-ord num"; o.textContent = r.ord;
     o.style.color = "var(--alerta)";
     var ol = document.createElement("div"); ol.className = "c-ordl"; ol.textContent = "na linha";
-    d.appendChild(o); d.appendChild(ol);
+    d.appendChild(o); d.appendChild(ol); d.appendChild(seloGps(r));
     c.appendChild(l); c.appendChild(d);
     piscaMira();
   }
@@ -1123,7 +1133,7 @@ footer{
     var d = document.createElement("div"); d.className = "c-r";
     var o = document.createElement("div"); o.className = "c-ord num"; o.textContent = r.ord;
     var ol = document.createElement("div"); ol.className = "c-ordl"; ol.textContent = "na linha";
-    d.appendChild(o); d.appendChild(ol);
+    d.appendChild(o); d.appendChild(ol); d.appendChild(seloGps(r));
     c.appendChild(pt); c.appendChild(l); c.appendChild(d);
     piscaMira();
   }
@@ -1148,6 +1158,16 @@ footer{
     f.className = "flash on " + classe;
     clearTimeout(tFlash);
     tFlash = setTimeout(function () { f.className = "flash " + classe; }, classe === "ok" ? 700 : 1400);
+  }
+
+  /* Mostra a precisao do GPS em cada registro. Sem isso ninguem percebe
+     quando a coordenada deixou de ser gravada, e o croqui chega furado. */
+  function seloGps(r, classe) {
+    var g = document.createElement("div");
+    g.className = classe || "c-gps";
+    if (r.ac == null) { g.textContent = "sem GPS"; g.className += " sem"; }
+    else g.textContent = "±" + Math.round(r.ac) + " m";
+    return g;
   }
 
   var tMira = null;
@@ -1441,7 +1461,8 @@ footer{
           fx.className = "li-x"; fx.type = "button"; fx.textContent = "✎";
           fx.style.color = corFalha(r);
           fx.setAttribute("aria-label", "Registrar o número desta posição");
-          li.appendChild(fod); li.appendChild(fpt); li.appendChild(ff); li.appendChild(fx);
+          li.appendChild(fod); li.appendChild(fpt); li.appendChild(ff);
+          li.appendChild(seloGps(r, "li-gps")); li.appendChild(fx);
           li.style.cursor = "pointer";
           li.addEventListener("click", function () { abrirCorrecao(r.id); });
         } else {
@@ -1452,6 +1473,7 @@ footer{
           var cd = document.createElement("div"); cd.className = "li-cod num"; cd.textContent = r.cod;
           var ep = document.createElement("div"); ep.className = "li-esp"; ep.textContent = r.esp || "";
           li.appendChild(od); li.appendChild(pt); li.appendChild(cd); li.appendChild(ep);
+          li.appendChild(seloGps(r, "li-gps"));
           var x = document.createElement("button");
           x.className = "li-x"; x.type = "button"; x.textContent = "✎";
           x.setAttribute("aria-label", "Conferir ou corrigir " + r.cod);

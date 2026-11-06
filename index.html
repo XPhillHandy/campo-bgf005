@@ -140,6 +140,9 @@ h1{font-size:1.4rem;margin:.15rem 0 0;font-weight:700;text-wrap:balance}
   border-radius:9px;padding:.4rem .55rem;font-size:.8rem;font-weight:700;min-width:58px;
   text-align:center;line-height:1.1}
 .cam-btn.on{background:rgba(92,143,42,.9);border-color:#fff}
+.cam-btn.gps-ok{background:rgba(57,99,19,.85);border-color:rgba(255,255,255,.7)}
+.cam-btn.gps-fraco{background:rgba(180,83,9,.85);border-color:rgba(255,255,255,.7)}
+.cam-btn.gps-sem{background:rgba(179,38,30,.8);border-color:rgba(255,255,255,.7)}
 .flash{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:.2rem;text-align:center;padding:1rem;pointer-events:none;
   opacity:0;transition:opacity .12s;z-index:4;color:#fff}
@@ -328,6 +331,7 @@ footer{
     <video id="vid" playsinline muted></video>
     <div class="mira" id="mira"></div>
     <div class="cam-btns">
+      <button type="button" class="cam-btn" id="bGpsVivo">GPS…</button>
       <button type="button" class="cam-btn" id="bZoom" hidden>1×</button>
       <button type="button" class="cam-btn" id="bLuz" hidden>luz</button>
     </div>
@@ -612,7 +616,8 @@ footer{
         posAtual = { la: p.coords.latitude, lo: p.coords.longitude,
                      ac: p.coords.accuracy, t: p.timestamp || Date.now() };
         guardarPonto(posAtual);
-      }, function () {}, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
+        pintarGps();
+      }, function () {}, { enableHighAccuracy: true, maximumAge: 15000, timeout: 60000 });
     } catch (e) { vigia = null; }
   }
   function pararTrilha() {
@@ -635,6 +640,17 @@ footer{
   }
 
   /* carimba a posição do instante na leitura */
+  /* Mostra o estado do GPS o tempo todo, na propria camera. Sem sinal de
+     dados o primeiro ponto demora, e sem esse aviso parece que o app travou. */
+  function pintarGps() {
+    var b = $("bGpsVivo"); if (!b) return;
+    if (!posAtual) { b.textContent = "GPS…"; b.className = "cam-btn gps-sem"; }
+    else {
+      b.textContent = "±" + Math.round(posAtual.ac) + "m";
+      b.className = "cam-btn" + (posAtual.ac <= 25 ? " gps-ok" : " gps-fraco");
+    }
+  }
+
   function carimbarPos(r) {
     if (!posAtual) return;
     r.la = posAtual.la; r.lo = posAtual.lo; r.ac = posAtual.ac;
@@ -1409,7 +1425,9 @@ footer{
     var f = ESCALAS[qual % ESCALAS.length];
     var lado = Math.round(Math.min(w, h) * f);
     var sx = Math.round((w - lado) / 2), sy = Math.round((h - lado) / 2);
-    var destino = 900;
+    /* A escala larga nao precisa de 900 px: o codigo so fica pequeno na
+       fechada. Menos lado, menos processamento. */
+    var destino = (f > 0.6) ? 620 : 900;
     cv.width = destino; cv.height = destino;
     cx.imageSmoothingEnabled = true;
     cx.imageSmoothingQuality = "high";
@@ -1438,16 +1456,27 @@ footer{
     return d;
   }
 
-  var passada = 0;
+  /* Cadencia limitada. Varrer todo quadro satura o processador do celular:
+     a tela trava, o aparelho esquenta e a bateria cai. Nove tentativas por
+     segundo pegam o QR igual e deixam a mao livre para digitar. */
+  var passada = 0, ultimaVarredura = 0;
+  var INTERVALO_MS = 110;
+
   function laco() {
     if (!rodando) return;
-    var v = $("vid");
+    var v = $("vid"), agora = (window.performance ? performance.now() : Date.now());
+    if (v.readyState < 2 || agora - ultimaVarredura < INTERVALO_MS) {
+      requestAnimationFrame(laco); return;
+    }
+    ultimaVarredura = agora;
     passada++;
-    if (v.readyState < 2 || !recortarMiolo(v, passada)) { requestAnimationFrame(laco); return; }
+    if (!recortarMiolo(v, passada)) { requestAnimationFrame(laco); return; }
     if (detector) {
       detector.detect(cv).then(function (cods) {
         if (cods && cods.length) { tratarBruto(cods[0].rawValue); requestAnimationFrame(laco); return; }
-        tentarJsQR();
+        /* o leitor nativo do Android ja varreu o quadro; o jsQR so entra de
+           vez em quando, como rede de seguranca, em vez de dobrar o custo */
+        if (passada % 6 === 0) tentarJsQR();
         requestAnimationFrame(laco);
       }).catch(function () { detector = null; requestAnimationFrame(laco); });
       return;
@@ -2006,6 +2035,11 @@ footer{
   trLer();
   recuperar();
   mostrar("abertura");
+  /* Sem sinal de dados o GPS nao tem ajuda da rede e o primeiro ponto demora
+     minutos. Liga ja na abertura, enquanto a pessoa digita o nome, para o
+     aparelho ter tempo de achar os satelites antes da primeira muda. */
+  iniciarTrilha();
+  pintarGps();
 })();
 </script>
 </body></html>

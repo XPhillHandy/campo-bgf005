@@ -317,6 +317,8 @@ footer{
   </div>
 
   <button class="btn btn-p" id="bComecar">Abrir a câmera</button>
+  <button class="btn btn-s" id="bTestarSom">Testar apito e vibração</button>
+  <p class="nota" id="nSom">Toque para conferir antes de ir para o campo.</p>
   <p class="nota">Funciona sem sinal. Tudo é salvo no aparelho a cada leitura e uma cópia vai para Downloads a cada 25 mudas.</p>
 </main>
 
@@ -676,16 +678,71 @@ footer{
       var b = ctxAudio.createBufferSource();
       b.buffer = ctxAudio.createBuffer(1, 1, 22050);
       b.connect(ctxAudio.destination); b.start(0);
+      manterSomVivo();
+      montarSomArquivo();
+      if (somArq && !somArq.__ok) {
+        somArq.__ok = 1; somArq.volume = 0;
+        somArq.play().then(function () {
+          somArq.pause(); somArq.currentTime = 0; somArq.volume = 1;
+        }).catch(function () { somArq.volume = 1; });
+      }
     } catch (e) {}
   }
   ["pointerdown", "touchstart", "keydown"].forEach(function (ev) {
     document.addEventListener(ev, destravarSom, { capture: true });
   });
 
+  /* Um fio de som inaudivel tocando sem parar impede o Android de suspender
+     o contexto quando a tela apaga. Sem isso o apito morre calado no meio do
+     dia e so volta se a pessoa tocar na tela de novo. */
+  function manterSomVivo() {
+    try {
+      if (!ctxAudio || ctxAudio.__vivo) return;
+      var o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
+      g.gain.value = 0.0000001;
+      o.connect(g); g.connect(ctxAudio.destination); o.start();
+      ctxAudio.__vivo = true;
+    } catch (e) {}
+  }
+
+  /* Plano B: um arquivo de som curto, montado na hora. Quando o contexto de
+     audio esta suspenso, este caminho ainda apita. */
+  var somArq = null;
+  function montarSomArquivo() {
+    try {
+      if (somArq) return;
+      var tx = 8000, n = Math.round(tx * 0.12), buf = new ArrayBuffer(44 + n * 2);
+      var d = new DataView(buf), i;
+      var txt = function (p, t) { for (var j = 0; j < t.length; j++) d.setUint8(p + j, t.charCodeAt(j)); };
+      txt(0, "RIFF"); d.setUint32(4, 36 + n * 2, true); txt(8, "WAVEfmt ");
+      d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+      d.setUint32(24, tx, true); d.setUint32(28, tx * 2, true);
+      d.setUint16(32, 2, true); d.setUint16(34, 16, true);
+      txt(36, "data"); d.setUint32(40, n * 2, true);
+      for (i = 0; i < n; i++) {
+        var env = Math.min(1, i / 60) * Math.min(1, (n - i) / 400);
+        d.setInt16(44 + i * 2, Math.round(Math.sin(2 * Math.PI * 880 * i / tx) * 26000 * env), true);
+      }
+      var u = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+      somArq = new Audio(u); somArq.volume = 1;
+    } catch (e) {}
+  }
+
   function bip(freq, ms) {
     try {
       if (!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctxAudio.state === "suspended") { ctxAudio.resume(); }
+      if (ctxAudio.state !== "running") {
+        ctxAudio.resume().then(function () { manterSomVivo(); tom(freq, ms); })
+          .catch(function () {});
+        if (somArq) { try { somArq.currentTime = 0; somArq.play().catch(function () {}); } catch (e) {} }
+        return;
+      }
+      tom(freq, ms);
+    } catch (e) {}
+  }
+
+  function tom(freq, ms) {
+    try {
       var o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
       o.type = "sine"; o.frequency.value = freq;
       g.gain.setValueAtTime(0.0001, ctxAudio.currentTime);
@@ -695,7 +752,16 @@ footer{
       o.start(); o.stop(ctxAudio.currentTime + ms / 1000 + 0.02);
     } catch (e) {}
   }
-  function vibra(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+
+  var vibrouAlgumaVez = false;
+  function vibra(ms) {
+    try {
+      if (!navigator.vibrate) return false;
+      var ok = navigator.vibrate(ms);
+      if (ok) vibrouAlgumaVez = true;
+      return ok;
+    } catch (e) { return false; }
+  }
 
   /* ================= TELAS ================= */
   function mostrar(qual) {
@@ -1041,7 +1107,7 @@ footer{
 
   function registrar(cod, origem) {
     var agora = Date.now();
-    if (cod === ultimoCod && agora - ultimoMs < 2500) return;
+    if (cod === ultimoCod && agora - ultimoMs < (jaLido(cod) ? 6000 : 2500)) return;
     ultimoCod = cod; ultimoMs = agora;
 
     var dup = jaLido(cod);
@@ -1708,6 +1774,27 @@ footer{
         + "). Continue da próxima muda, no mesmo sentido.");
     }
   }
+  /* Teste de apito e vibracao: transforma uma falha silenciosa em algo que
+     a pessoa ve na tela e consegue resolver sozinha, antes de ir a campo. */
+  $("bTestarSom").addEventListener("click", function () {
+    var n = $("nSom");
+    destravarSom();
+    var vib = vibra([90, 60, 90]);
+    bip(880, 160);
+    setTimeout(function () { bip(1180, 160); }, 240);
+    setTimeout(function () {
+      var est = ctxAudio ? ctxAudio.state : "sem áudio";
+      var som = (est === "running")
+        ? "Apito ligado. Se não ouviu, suba o volume de MÍDIA do aparelho pelos botões laterais enquanto o app está aberto."
+        : "O som está travado neste aparelho (" + est + "). Toque aqui de novo.";
+      var vb = vib
+        ? "Vibração aceita."
+        : "O aparelho recusou a vibração — ligue a vibração nos ajustes e tire do modo Não Perturbe.";
+      n.textContent = som + "  " + vb;
+      n.style.color = (est === "running" && vib) ? "var(--ok)" : "var(--alerta)";
+    }, 700);
+  });
+
   $("bComecar").addEventListener("click", entrarNoScan);
   $("bRetomar").addEventListener("click", entrarNoScan);
 
@@ -1904,6 +1991,8 @@ footer{
   window.addEventListener("pagehide", function () { lsGravar(); idbGravar(); trGravar(); });
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") { lsGravar(); idbGravar(); trGravar(); return; }
+    /* voltando para a tela: o Android costuma deixar o audio suspenso */
+    try { if (ctxAudio && ctxAudio.state !== "running") ctxAudio.resume().then(manterSomVivo).catch(function () {}); } catch (e) {}
     if (!$("tScan").hidden && !fluxo) abrirCamera();
     if ($("tAbertura").hidden) iniciarTrilha();
     manterAcesa();
